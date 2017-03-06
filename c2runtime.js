@@ -12380,265 +12380,6 @@ cr.plugins_.Keyboard = function(runtime)
 }());
 ;
 ;
-cr.plugins_.Mouse = function(runtime)
-{
-	this.runtime = runtime;
-};
-(function ()
-{
-	var pluginProto = cr.plugins_.Mouse.prototype;
-	pluginProto.Type = function(plugin)
-	{
-		this.plugin = plugin;
-		this.runtime = plugin.runtime;
-	};
-	var typeProto = pluginProto.Type.prototype;
-	typeProto.onCreate = function()
-	{
-	};
-	pluginProto.Instance = function(type)
-	{
-		this.type = type;
-		this.runtime = type.runtime;
-		this.buttonMap = new Array(4);		// mouse down states
-		this.mouseXcanvas = 0;				// mouse position relative to canvas
-		this.mouseYcanvas = 0;
-		this.triggerButton = 0;
-		this.triggerType = 0;
-		this.triggerDir = 0;
-		this.handled = false;
-	};
-	var instanceProto = pluginProto.Instance.prototype;
-	instanceProto.onCreate = function()
-	{
-		var self = this;
-		if (!this.runtime.isDomFree)
-		{
-			jQuery(document).mousemove(
-				function(info) {
-					self.onMouseMove(info);
-				}
-			);
-			jQuery(document).mousedown(
-				function(info) {
-					self.onMouseDown(info);
-				}
-			);
-			jQuery(document).mouseup(
-				function(info) {
-					self.onMouseUp(info);
-				}
-			);
-			jQuery(document).dblclick(
-				function(info) {
-					self.onDoubleClick(info);
-				}
-			);
-			var wheelevent = function(info) {
-								self.onWheel(info);
-							};
-			document.addEventListener("mousewheel", wheelevent, false);
-			document.addEventListener("DOMMouseScroll", wheelevent, false);
-		}
-	};
-	var dummyoffset = {left: 0, top: 0};
-	instanceProto.onMouseMove = function(info)
-	{
-		var offset = this.runtime.isDomFree ? dummyoffset : jQuery(this.runtime.canvas).offset();
-		this.mouseXcanvas = info.pageX - offset.left;
-		this.mouseYcanvas = info.pageY - offset.top;
-	};
-	instanceProto.mouseInGame = function ()
-	{
-		if (this.runtime.fullscreen_mode > 0)
-			return true;
-		return this.mouseXcanvas >= 0 && this.mouseYcanvas >= 0
-		    && this.mouseXcanvas < this.runtime.width && this.mouseYcanvas < this.runtime.height;
-	};
-	instanceProto.onMouseDown = function(info)
-	{
-		if (!this.mouseInGame())
-			return;
-		if (this.runtime.had_a_click)
-			info.preventDefault();
-		this.buttonMap[info.which] = true;
-		this.runtime.isInUserInputEvent = true;
-		this.runtime.trigger(cr.plugins_.Mouse.prototype.cnds.OnAnyClick, this);
-		this.triggerButton = info.which - 1;	// 1-based
-		this.triggerType = 0;					// single click
-		this.runtime.trigger(cr.plugins_.Mouse.prototype.cnds.OnClick, this);
-		this.runtime.trigger(cr.plugins_.Mouse.prototype.cnds.OnObjectClicked, this);
-		this.runtime.isInUserInputEvent = false;
-	};
-	instanceProto.onMouseUp = function(info)
-	{
-		if (!this.buttonMap[info.which])
-			return;
-		if (this.runtime.had_a_click)
-			info.preventDefault();
-		this.runtime.had_a_click = true;
-		this.buttonMap[info.which] = false;
-		this.runtime.isInUserInputEvent = true;
-		this.triggerButton = info.which - 1;	// 1-based
-		this.runtime.trigger(cr.plugins_.Mouse.prototype.cnds.OnRelease, this);
-		this.runtime.isInUserInputEvent = false;
-	};
-	instanceProto.onDoubleClick = function(info)
-	{
-		if (!this.mouseInGame())
-			return;
-		info.preventDefault();
-		this.runtime.isInUserInputEvent = true;
-		this.triggerButton = info.which - 1;	// 1-based
-		this.triggerType = 1;					// double click
-		this.runtime.trigger(cr.plugins_.Mouse.prototype.cnds.OnClick, this);
-		this.runtime.trigger(cr.plugins_.Mouse.prototype.cnds.OnObjectClicked, this);
-		this.runtime.isInUserInputEvent = false;
-	};
-	instanceProto.onWheel = function (info)
-	{
-		var delta = info.wheelDelta ? info.wheelDelta : info.detail ? -info.detail : 0;
-		this.triggerDir = (delta < 0 ? 0 : 1);
-		this.handled = false;
-		this.runtime.isInUserInputEvent = true;
-		this.runtime.trigger(cr.plugins_.Mouse.prototype.cnds.OnWheel, this);
-		this.runtime.isInUserInputEvent = false;
-		if (this.handled)
-			info.preventDefault();
-	};
-	function Cnds() {};
-	Cnds.prototype.OnClick = function (button, type)
-	{
-		return button === this.triggerButton && type === this.triggerType;
-	};
-	Cnds.prototype.OnAnyClick = function ()
-	{
-		return true;
-	};
-	Cnds.prototype.IsButtonDown = function (button)
-	{
-		return this.buttonMap[button + 1];	// jQuery uses 1-based buttons for some reason
-	};
-	Cnds.prototype.OnRelease = function (button)
-	{
-		return button === this.triggerButton;
-	};
-	Cnds.prototype.IsOverObject = function (obj)
-	{
-		var cnd = this.runtime.getCurrentCondition();
-		var mx = this.mouseXcanvas;
-		var my = this.mouseYcanvas;
-		return cr.xor(this.runtime.testAndSelectCanvasPointOverlap(obj, mx, my, cnd.inverted), cnd.inverted);
-	};
-	Cnds.prototype.OnObjectClicked = function (button, type, obj)
-	{
-		if (button !== this.triggerButton || type !== this.triggerType)
-			return false;	// wrong click type
-		return this.runtime.testAndSelectCanvasPointOverlap(obj, this.mouseXcanvas, this.mouseYcanvas, false);
-	};
-	Cnds.prototype.OnWheel = function (dir)
-	{
-		this.handled = true;
-		return dir === this.triggerDir;
-	};
-	pluginProto.cnds = new Cnds();
-	function Acts() {};
-	Acts.prototype.SetCursor = function (c)
-	{
-		var cursor_style = ["auto", "pointer", "text", "crosshair", "move", "help", "wait", "none"][c];
-		if (this.runtime.canvas && this.runtime.canvas.style)
-			this.runtime.canvas.style.cursor = cursor_style;
-	};
-	Acts.prototype.SetCursorSprite = function (obj)
-	{
-		if (this.runtime.isDomFree || this.runtime.isMobile || !obj)
-			return;
-		var inst = obj.getFirstPicked();
-		if (!inst || !inst.curFrame)
-			return;
-		var frame = inst.curFrame;
-		var datauri = frame.getDataUri();
-		var cursor_style = "url(" + datauri + ") " + Math.round(frame.hotspotX * frame.width) + " " + Math.round(frame.hotspotY * frame.height) + ", auto";
-		jQuery(this.runtime.canvas).css("cursor", cursor_style);
-	};
-	pluginProto.acts = new Acts();
-	function Exps() {};
-	Exps.prototype.X = function (ret, layerparam)
-	{
-		var layer, oldScale, oldZoomRate, oldParallaxX, oldAngle;
-		if (cr.is_undefined(layerparam))
-		{
-			layer = this.runtime.getLayerByNumber(0);
-			oldScale = layer.scale;
-			oldZoomRate = layer.zoomRate;
-			oldParallaxX = layer.parallaxX;
-			oldAngle = layer.angle;
-			layer.scale = this.runtime.running_layout.scale;
-			layer.zoomRate = 1.0;
-			layer.parallaxX = 1.0;
-			layer.angle = this.runtime.running_layout.angle;
-			ret.set_float(layer.canvasToLayer(this.mouseXcanvas, this.mouseYcanvas, true));
-			layer.scale = oldScale;
-			layer.zoomRate = oldZoomRate;
-			layer.parallaxX = oldParallaxX;
-			layer.angle = oldAngle;
-		}
-		else
-		{
-			if (cr.is_number(layerparam))
-				layer = this.runtime.getLayerByNumber(layerparam);
-			else
-				layer = this.runtime.getLayerByName(layerparam);
-			if (layer)
-				ret.set_float(layer.canvasToLayer(this.mouseXcanvas, this.mouseYcanvas, true));
-			else
-				ret.set_float(0);
-		}
-	};
-	Exps.prototype.Y = function (ret, layerparam)
-	{
-		var layer, oldScale, oldZoomRate, oldParallaxY, oldAngle;
-		if (cr.is_undefined(layerparam))
-		{
-			layer = this.runtime.getLayerByNumber(0);
-			oldScale = layer.scale;
-			oldZoomRate = layer.zoomRate;
-			oldParallaxY = layer.parallaxY;
-			oldAngle = layer.angle;
-			layer.scale = this.runtime.running_layout.scale;
-			layer.zoomRate = 1.0;
-			layer.parallaxY = 1.0;
-			layer.angle = this.runtime.running_layout.angle;
-			ret.set_float(layer.canvasToLayer(this.mouseXcanvas, this.mouseYcanvas, false));
-			layer.scale = oldScale;
-			layer.zoomRate = oldZoomRate;
-			layer.parallaxY = oldParallaxY;
-			layer.angle = oldAngle;
-		}
-		else
-		{
-			if (cr.is_number(layerparam))
-				layer = this.runtime.getLayerByNumber(layerparam);
-			else
-				layer = this.runtime.getLayerByName(layerparam);
-			if (layer)
-				ret.set_float(layer.canvasToLayer(this.mouseXcanvas, this.mouseYcanvas, false));
-			else
-				ret.set_float(0);
-		}
-	};
-	Exps.prototype.AbsoluteX = function (ret)
-	{
-		ret.set_float(this.mouseXcanvas);
-	};
-	Exps.prototype.AbsoluteY = function (ret)
-	{
-		ret.set_float(this.mouseYcanvas);
-	};
-	pluginProto.exps = new Exps();
-}());
-;
-;
 cr.plugins_.Sprite = function(runtime)
 {
 	this.runtime = runtime;
@@ -14660,6 +14401,1011 @@ cr.plugins_.TiledBg = function(runtime)
 }());
 ;
 ;
+cr.plugins_.Touch = function(runtime)
+{
+	this.runtime = runtime;
+};
+(function ()
+{
+	var pluginProto = cr.plugins_.Touch.prototype;
+	pluginProto.Type = function(plugin)
+	{
+		this.plugin = plugin;
+		this.runtime = plugin.runtime;
+	};
+	var typeProto = pluginProto.Type.prototype;
+	typeProto.onCreate = function()
+	{
+	};
+	pluginProto.Instance = function(type)
+	{
+		this.type = type;
+		this.runtime = type.runtime;
+		this.touches = [];
+		this.mouseDown = false;
+	};
+	var instanceProto = pluginProto.Instance.prototype;
+	var dummyoffset = {left: 0, top: 0};
+	instanceProto.findTouch = function (id)
+	{
+		var i, len;
+		for (i = 0, len = this.touches.length; i < len; i++)
+		{
+			if (this.touches[i]["id"] === id)
+				return i;
+		}
+		return -1;
+	};
+	var appmobi_accx = 0;
+	var appmobi_accy = 0;
+	var appmobi_accz = 0;
+	function AppMobiGetAcceleration(evt)
+	{
+		appmobi_accx = evt.x;
+		appmobi_accy = evt.y;
+		appmobi_accz = evt.z;
+	};
+	var pg_accx = 0;
+	var pg_accy = 0;
+	var pg_accz = 0;
+	function PhoneGapGetAcceleration(evt)
+	{
+		pg_accx = evt.x;
+		pg_accy = evt.y;
+		pg_accz = evt.z;
+	};
+	var theInstance = null;
+	instanceProto.onCreate = function()
+	{
+		theInstance = this;
+		this.isWindows8 = !!(typeof window["c2isWindows8"] !== "undefined" && window["c2isWindows8"]);
+		this.orient_alpha = 0;
+		this.orient_beta = 0;
+		this.orient_gamma = 0;
+		this.acc_g_x = 0;
+		this.acc_g_y = 0;
+		this.acc_g_z = 0;
+		this.acc_x = 0;
+		this.acc_y = 0;
+		this.acc_z = 0;
+		this.curTouchX = 0;
+		this.curTouchY = 0;
+		this.trigger_index = 0;
+		this.trigger_id = 0;
+		this.useMouseInput = (this.properties[0] !== 0);
+		var elem = (this.runtime.fullscreen_mode > 0) ? document : this.runtime.canvas;
+		var elem2 = document;
+		if (this.runtime.isDirectCanvas)
+			elem2 = elem = window["Canvas"];
+		else if (this.runtime.isCocoonJs)
+			elem2 = elem = window;
+		var self = this;
+		if (window.navigator["pointerEnabled"])
+		{
+			elem.addEventListener("pointerdown",
+				function(info) {
+					self.onPointerStart(info);
+				},
+				false
+			);
+			elem.addEventListener("pointermove",
+				function(info) {
+					self.onPointerMove(info);
+				},
+				false
+			);
+			elem2.addEventListener("pointerup",
+				function(info) {
+					self.onPointerEnd(info);
+				},
+				false
+			);
+			elem2.addEventListener("pointercancel",
+				function(info) {
+					self.onPointerEnd(info);
+				},
+				false
+			);
+			if (this.runtime.canvas)
+			{
+				this.runtime.canvas.addEventListener("MSGestureHold", function(e) {
+					e.preventDefault();
+				}, false);
+				document.addEventListener("MSGestureHold", function(e) {
+					e.preventDefault();
+				}, false);
+				this.runtime.canvas.addEventListener("gesturehold", function(e) {
+					e.preventDefault();
+				}, false);
+				document.addEventListener("gesturehold", function(e) {
+					e.preventDefault();
+				}, false);
+			}
+		}
+		else if (window.navigator["msPointerEnabled"])
+		{
+			elem.addEventListener("MSPointerDown",
+				function(info) {
+					self.onPointerStart(info);
+				},
+				false
+			);
+			elem.addEventListener("MSPointerMove",
+				function(info) {
+					self.onPointerMove(info);
+				},
+				false
+			);
+			elem2.addEventListener("MSPointerUp",
+				function(info) {
+					self.onPointerEnd(info);
+				},
+				false
+			);
+			elem2.addEventListener("MSPointerCancel",
+				function(info) {
+					self.onPointerEnd(info);
+				},
+				false
+			);
+			if (this.runtime.canvas)
+			{
+				this.runtime.canvas.addEventListener("MSGestureHold", function(e) {
+					e.preventDefault();
+				}, false);
+				document.addEventListener("MSGestureHold", function(e) {
+					e.preventDefault();
+				}, false);
+			}
+		}
+		else
+		{
+			elem.addEventListener("touchstart",
+				function(info) {
+					self.onTouchStart(info);
+				},
+				false
+			);
+			elem.addEventListener("touchmove",
+				function(info) {
+					self.onTouchMove(info);
+				},
+				false
+			);
+			elem2.addEventListener("touchend",
+				function(info) {
+					self.onTouchEnd(info);
+				},
+				false
+			);
+			elem2.addEventListener("touchcancel",
+				function(info) {
+					self.onTouchEnd(info);
+				},
+				false
+			);
+		}
+		if (this.isWindows8)
+		{
+			var win8accelerometerFn = function(e) {
+					var reading = e["reading"];
+					self.acc_x = reading["accelerationX"];
+					self.acc_y = reading["accelerationY"];
+					self.acc_z = reading["accelerationZ"];
+				};
+			var win8inclinometerFn = function(e) {
+					var reading = e["reading"];
+					self.orient_alpha = reading["yawDegrees"];
+					self.orient_beta = reading["pitchDegrees"];
+					self.orient_gamma = reading["rollDegrees"];
+				};
+			var accelerometer = Windows["Devices"]["Sensors"]["Accelerometer"]["getDefault"]();
+            if (accelerometer)
+			{
+                accelerometer["reportInterval"] = Math.max(accelerometer["minimumReportInterval"], 16);
+				accelerometer.addEventListener("readingchanged", win8accelerometerFn);
+            }
+			var inclinometer = Windows["Devices"]["Sensors"]["Inclinometer"]["getDefault"]();
+			if (inclinometer)
+			{
+				inclinometer["reportInterval"] = Math.max(inclinometer["minimumReportInterval"], 16);
+				inclinometer.addEventListener("readingchanged", win8inclinometerFn);
+			}
+			document.addEventListener("visibilitychange", function(e) {
+				if (document["hidden"] || document["msHidden"])
+				{
+					if (accelerometer)
+						accelerometer.removeEventListener("readingchanged", win8accelerometerFn);
+					if (inclinometer)
+						inclinometer.removeEventListener("readingchanged", win8inclinometerFn);
+				}
+				else
+				{
+					if (accelerometer)
+						accelerometer.addEventListener("readingchanged", win8accelerometerFn);
+					if (inclinometer)
+						inclinometer.addEventListener("readingchanged", win8inclinometerFn);
+				}
+			}, false);
+		}
+		else
+		{
+			window.addEventListener("deviceorientation", function (eventData) {
+				self.orient_alpha = eventData["alpha"] || 0;
+				self.orient_beta = eventData["beta"] || 0;
+				self.orient_gamma = eventData["gamma"] || 0;
+			}, false);
+			window.addEventListener("devicemotion", function (eventData) {
+				if (eventData["accelerationIncludingGravity"])
+				{
+					self.acc_g_x = eventData["accelerationIncludingGravity"]["x"];
+					self.acc_g_y = eventData["accelerationIncludingGravity"]["y"];
+					self.acc_g_z = eventData["accelerationIncludingGravity"]["z"];
+				}
+				if (eventData["acceleration"])
+				{
+					self.acc_x = eventData["acceleration"]["x"];
+					self.acc_y = eventData["acceleration"]["y"];
+					self.acc_z = eventData["acceleration"]["z"];
+				}
+			}, false);
+		}
+		if (this.useMouseInput && !this.runtime.isDomFree)
+		{
+			jQuery(document).mousemove(
+				function(info) {
+					self.onMouseMove(info);
+				}
+			);
+			jQuery(document).mousedown(
+				function(info) {
+					self.onMouseDown(info);
+				}
+			);
+			jQuery(document).mouseup(
+				function(info) {
+					self.onMouseUp(info);
+				}
+			);
+		}
+		if (this.runtime.isAppMobi && !this.runtime.isDirectCanvas)
+		{
+			AppMobi["accelerometer"]["watchAcceleration"](AppMobiGetAcceleration, { "frequency": 40, "adjustForRotation": true });
+		}
+		if (this.runtime.isPhoneGap)
+		{
+			navigator["accelerometer"]["watchAcceleration"](PhoneGapGetAcceleration, null, { "frequency": 40 });
+		}
+		this.runtime.tick2Me(this);
+	};
+	instanceProto.onPointerMove = function (info)
+	{
+		if (info["pointerType"] === info["MSPOINTER_TYPE_MOUSE"] || info["pointerType"] === "mouse")
+			return;
+		if (info.preventDefault)
+			info.preventDefault();
+		var i = this.findTouch(info["pointerId"]);
+		var nowtime = cr.performance_now();
+		if (i >= 0)
+		{
+			var offset = this.runtime.isDomFree ? dummyoffset : jQuery(this.runtime.canvas).offset();
+			var t = this.touches[i];
+			if (nowtime - t.time < 2)
+				return;
+			t.lasttime = t.time;
+			t.lastx = t.x;
+			t.lasty = t.y;
+			t.time = nowtime;
+			t.x = info.pageX - offset.left;
+			t.y = info.pageY - offset.top;
+		}
+	};
+	instanceProto.onPointerStart = function (info)
+	{
+		if (info["pointerType"] === info["MSPOINTER_TYPE_MOUSE"] || info["pointerType"] === "mouse")
+			return;
+		if (info.preventDefault)
+			info.preventDefault();
+		var offset = this.runtime.isDomFree ? dummyoffset : jQuery(this.runtime.canvas).offset();
+		var touchx = info.pageX - offset.left;
+		var touchy = info.pageY - offset.top;
+		var nowtime = cr.performance_now();
+		this.trigger_index = this.touches.length;
+		this.trigger_id = info["pointerId"];
+		this.touches.push({ time: nowtime,
+							x: touchx,
+							y: touchy,
+							lasttime: nowtime,
+							lastx: touchx,
+							lasty: touchy,
+							"id": info["pointerId"],
+							startindex: this.trigger_index
+						});
+		this.runtime.isInUserInputEvent = true;
+		this.runtime.trigger(cr.plugins_.Touch.prototype.cnds.OnNthTouchStart, this);
+		this.runtime.trigger(cr.plugins_.Touch.prototype.cnds.OnTouchStart, this);
+		this.curTouchX = touchx;
+		this.curTouchY = touchy;
+		this.runtime.trigger(cr.plugins_.Touch.prototype.cnds.OnTouchObject, this);
+		this.runtime.isInUserInputEvent = false;
+	};
+	instanceProto.onPointerEnd = function (info)
+	{
+		if (info["pointerType"] === info["MSPOINTER_TYPE_MOUSE"] || info["pointerType"] === "mouse")
+			return;
+		if (info.preventDefault)
+			info.preventDefault();
+		var i = this.findTouch(info["pointerId"]);
+		this.trigger_index = (i >= 0 ? this.touches[i].startindex : -1);
+		this.trigger_id = (i >= 0 ? this.touches[i]["id"] : -1);
+		this.runtime.isInUserInputEvent = true;
+		this.runtime.trigger(cr.plugins_.Touch.prototype.cnds.OnNthTouchEnd, this);
+		this.runtime.trigger(cr.plugins_.Touch.prototype.cnds.OnTouchEnd, this);
+		this.runtime.isInUserInputEvent = false;
+		if (i >= 0)
+		{
+			this.touches.splice(i, 1);
+		}
+	};
+	instanceProto.onTouchMove = function (info)
+	{
+		if (info.preventDefault)
+			info.preventDefault();
+		var nowtime = cr.performance_now();
+		var i, len, t, u;
+		for (i = 0, len = info.changedTouches.length; i < len; i++)
+		{
+			t = info.changedTouches[i];
+			var j = this.findTouch(t["identifier"]);
+			if (j >= 0)
+			{
+				var offset = this.runtime.isDomFree ? dummyoffset : jQuery(this.runtime.canvas).offset();
+				u = this.touches[j];
+				if (nowtime - u.time < 2)
+					continue;
+				u.lasttime = u.time;
+				u.lastx = u.x;
+				u.lasty = u.y;
+				u.time = nowtime;
+				u.x = t.pageX - offset.left;
+				u.y = t.pageY - offset.top;
+			}
+		}
+	};
+	instanceProto.onTouchStart = function (info)
+	{
+		if (info.preventDefault)
+			info.preventDefault();
+		var offset = this.runtime.isDomFree ? dummyoffset : jQuery(this.runtime.canvas).offset();
+		var nowtime = cr.performance_now();
+		this.runtime.isInUserInputEvent = true;
+		var i, len, t, j;
+		for (i = 0, len = info.changedTouches.length; i < len; i++)
+		{
+			t = info.changedTouches[i];
+			j = this.findTouch(t["identifier"]);
+			if (j !== -1)
+				continue;
+			var touchx = t.pageX - offset.left;
+			var touchy = t.pageY - offset.top;
+			this.trigger_index = this.touches.length;
+			this.trigger_id = t["identifier"];
+			this.touches.push({ time: nowtime,
+								x: touchx,
+								y: touchy,
+								lasttime: nowtime,
+								lastx: touchx,
+								lasty: touchy,
+								"id": t["identifier"],
+								startindex: this.trigger_index
+							});
+			this.runtime.trigger(cr.plugins_.Touch.prototype.cnds.OnNthTouchStart, this);
+			this.runtime.trigger(cr.plugins_.Touch.prototype.cnds.OnTouchStart, this);
+			this.curTouchX = touchx;
+			this.curTouchY = touchy;
+			this.runtime.trigger(cr.plugins_.Touch.prototype.cnds.OnTouchObject, this);
+		}
+		this.runtime.isInUserInputEvent = false;
+	};
+	instanceProto.onTouchEnd = function (info)
+	{
+		if (info.preventDefault)
+			info.preventDefault();
+		this.runtime.isInUserInputEvent = true;
+		var i, len, t, j;
+		for (i = 0, len = info.changedTouches.length; i < len; i++)
+		{
+			t = info.changedTouches[i];
+			j = this.findTouch(t["identifier"]);
+			if (j >= 0)
+			{
+				this.trigger_index = this.touches[j].startindex;
+				this.trigger_id = this.touches[j]["id"];
+				this.runtime.trigger(cr.plugins_.Touch.prototype.cnds.OnNthTouchEnd, this);
+				this.runtime.trigger(cr.plugins_.Touch.prototype.cnds.OnTouchEnd, this);
+				this.touches.splice(j, 1);
+			}
+		}
+		this.runtime.isInUserInputEvent = false;
+	};
+	instanceProto.getAlpha = function ()
+	{
+		if (this.runtime.isAppMobi && this.orient_alpha === 0 && appmobi_accz !== 0)
+			return appmobi_accz * 90;
+		else if (this.runtime.isPhoneGap  && this.orient_alpha === 0 && pg_accz !== 0)
+			return pg_accz * 90;
+		else
+			return this.orient_alpha;
+	};
+	instanceProto.getBeta = function ()
+	{
+		if (this.runtime.isAppMobi && this.orient_beta === 0 && appmobi_accy !== 0)
+			return appmobi_accy * -90;
+		else if (this.runtime.isPhoneGap  && this.orient_beta === 0 && pg_accy !== 0)
+			return pg_accy * -90;
+		else
+			return this.orient_beta;
+	};
+	instanceProto.getGamma = function ()
+	{
+		if (this.runtime.isAppMobi && this.orient_gamma === 0 && appmobi_accx !== 0)
+			return appmobi_accx * 90;
+		else if (this.runtime.isPhoneGap  && this.orient_gamma === 0 && pg_accx !== 0)
+			return pg_accx * 90;
+		else
+			return this.orient_gamma;
+	};
+	var noop_func = function(){};
+	instanceProto.onMouseDown = function(info)
+	{
+		if (info.preventDefault && this.runtime.had_a_click)
+			info.preventDefault();
+		var t = { pageX: info.pageX, pageY: info.pageY, "identifier": 0 };
+		var fakeinfo = { changedTouches: [t] };
+		this.onTouchStart(fakeinfo);
+		this.mouseDown = true;
+	};
+	instanceProto.onMouseMove = function(info)
+	{
+		if (info.preventDefault && this.runtime.had_a_click)
+			info.preventDefault();
+		if (!this.mouseDown)
+			return;
+		var t = { pageX: info.pageX, pageY: info.pageY, "identifier": 0 };
+		var fakeinfo = { changedTouches: [t] };
+		this.onTouchMove(fakeinfo);
+	};
+	instanceProto.onMouseUp = function(info)
+	{
+		if (info.preventDefault && this.runtime.had_a_click)
+			info.preventDefault();
+		this.runtime.had_a_click = true;
+		var t = { pageX: info.pageX, pageY: info.pageY, "identifier": 0 };
+		var fakeinfo = { changedTouches: [t] };
+		this.onTouchEnd(fakeinfo);
+		this.mouseDown = false;
+	};
+	instanceProto.tick2 = function()
+	{
+		var i, len, t;
+		var nowtime = cr.performance_now();
+		for (i = 0, len = this.touches.length; i < len; i++)
+		{
+			t = this.touches[i];
+			if (t.time <= nowtime - 50)
+				t.lasttime = nowtime;
+		}
+	};
+	function Cnds() {};
+	Cnds.prototype.OnTouchStart = function ()
+	{
+		return true;
+	};
+	Cnds.prototype.OnTouchEnd = function ()
+	{
+		return true;
+	};
+	Cnds.prototype.IsInTouch = function ()
+	{
+		return this.touches.length;
+	};
+	Cnds.prototype.OnTouchObject = function (type)
+	{
+		if (!type)
+			return false;
+		return this.runtime.testAndSelectCanvasPointOverlap(type, this.curTouchX, this.curTouchY, false);
+	};
+	Cnds.prototype.IsTouchingObject = function (type)
+	{
+		if (!type)
+			return false;
+		var sol = type.getCurrentSol();
+		var instances = sol.getObjects();
+		var px, py;
+		var touching = [];
+		var i, leni, j, lenj;
+		for (i = 0, leni = instances.length; i < leni; i++)
+		{
+			var inst = instances[i];
+			inst.update_bbox();
+			for (j = 0, lenj = this.touches.length; j < lenj; j++)
+			{
+				var touch = this.touches[j];
+				px = inst.layer.canvasToLayer(touch.x, touch.y, true);
+				py = inst.layer.canvasToLayer(touch.x, touch.y, false);
+				if (inst.contains_pt(px, py))
+				{
+					touching.push(inst);
+					break;
+				}
+			}
+		}
+		if (touching.length)
+		{
+			sol.select_all = false;
+			sol.instances = touching;
+			type.applySolToContainer();
+			return true;
+		}
+		else
+			return false;
+	};
+	Cnds.prototype.CompareTouchSpeed = function (index, cmp, s)
+	{
+		index = Math.floor(index);
+		if (index < 0 || index >= this.touches.length)
+			return false;
+		var t = this.touches[index];
+		var dist = cr.distanceTo(t.x, t.y, t.lastx, t.lasty);
+		var timediff = (t.time - t.lasttime) / 1000;
+		var speed = 0;
+		if (timediff > 0)
+			speed = dist / timediff;
+		return cr.do_cmp(speed, cmp, s);
+	};
+	Cnds.prototype.OrientationSupported = function ()
+	{
+		return typeof window["DeviceOrientationEvent"] !== "undefined";
+	};
+	Cnds.prototype.MotionSupported = function ()
+	{
+		return typeof window["DeviceMotionEvent"] !== "undefined";
+	};
+	Cnds.prototype.CompareOrientation = function (orientation_, cmp_, angle_)
+	{
+		var v = 0;
+		if (orientation_ === 0)
+			v = this.getAlpha();
+		else if (orientation_ === 1)
+			v = this.getBeta();
+		else
+			v = this.getGamma();
+		return cr.do_cmp(v, cmp_, angle_);
+	};
+	Cnds.prototype.CompareAcceleration = function (acceleration_, cmp_, angle_)
+	{
+		var v = 0;
+		if (acceleration_ === 0)
+			v = this.acc_g_x;
+		else if (acceleration_ === 1)
+			v = this.acc_g_y;
+		else if (acceleration_ === 2)
+			v = this.acc_g_z;
+		else if (acceleration_ === 3)
+			v = this.acc_x;
+		else if (acceleration_ === 4)
+			v = this.acc_y;
+		else if (acceleration_ === 5)
+			v = this.acc_z;
+		return cr.do_cmp(v, cmp_, angle_);
+	};
+	Cnds.prototype.OnNthTouchStart = function (touch_)
+	{
+		touch_ = Math.floor(touch_);
+		return touch_ === this.trigger_index;
+	};
+	Cnds.prototype.OnNthTouchEnd = function (touch_)
+	{
+		touch_ = Math.floor(touch_);
+		return touch_ === this.trigger_index;
+	};
+	Cnds.prototype.HasNthTouch = function (touch_)
+	{
+		touch_ = Math.floor(touch_);
+		return this.touches.length >= touch_ + 1;
+	};
+	pluginProto.cnds = new Cnds();
+	function Exps() {};
+	Exps.prototype.TouchCount = function (ret)
+	{
+		ret.set_int(this.touches.length);
+	};
+	Exps.prototype.X = function (ret, layerparam)
+	{
+		if (this.touches.length)
+		{
+			var layer, oldScale, oldZoomRate, oldParallaxX, oldAngle;
+			if (cr.is_undefined(layerparam))
+			{
+				layer = this.runtime.getLayerByNumber(0);
+				oldScale = layer.scale;
+				oldZoomRate = layer.zoomRate;
+				oldParallaxX = layer.parallaxX;
+				oldAngle = layer.angle;
+				layer.scale = this.runtime.running_layout.scale;
+				layer.zoomRate = 1.0;
+				layer.parallaxX = 1.0;
+				layer.angle = this.runtime.running_layout.angle;
+				ret.set_float(layer.canvasToLayer(this.touches[0].x, this.touches[0].y, true));
+				layer.scale = oldScale;
+				layer.zoomRate = oldZoomRate;
+				layer.parallaxX = oldParallaxX;
+				layer.angle = oldAngle;
+			}
+			else
+			{
+				if (cr.is_number(layerparam))
+					layer = this.runtime.getLayerByNumber(layerparam);
+				else
+					layer = this.runtime.getLayerByName(layerparam);
+				if (layer)
+					ret.set_float(layer.canvasToLayer(this.touches[0].x, this.touches[0].y, true));
+				else
+					ret.set_float(0);
+			}
+		}
+		else
+			ret.set_float(0);
+	};
+	Exps.prototype.XAt = function (ret, index, layerparam)
+	{
+		index = Math.floor(index);
+		if (index < 0 || index >= this.touches.length)
+		{
+			ret.set_float(0);
+			return;
+		}
+		var layer, oldScale, oldZoomRate, oldParallaxX, oldAngle;
+		if (cr.is_undefined(layerparam))
+		{
+			layer = this.runtime.getLayerByNumber(0);
+			oldScale = layer.scale;
+			oldZoomRate = layer.zoomRate;
+			oldParallaxX = layer.parallaxX;
+			oldAngle = layer.angle;
+			layer.scale = this.runtime.running_layout.scale;
+			layer.zoomRate = 1.0;
+			layer.parallaxX = 1.0;
+			layer.angle = this.runtime.running_layout.angle;
+			ret.set_float(layer.canvasToLayer(this.touches[index].x, this.touches[index].y, true));
+			layer.scale = oldScale;
+			layer.zoomRate = oldZoomRate;
+			layer.parallaxX = oldParallaxX;
+			layer.angle = oldAngle;
+		}
+		else
+		{
+			if (cr.is_number(layerparam))
+				layer = this.runtime.getLayerByNumber(layerparam);
+			else
+				layer = this.runtime.getLayerByName(layerparam);
+			if (layer)
+				ret.set_float(layer.canvasToLayer(this.touches[index].x, this.touches[index].y, true));
+			else
+				ret.set_float(0);
+		}
+	};
+	Exps.prototype.XForID = function (ret, id, layerparam)
+	{
+		var index = this.findTouch(id);
+		if (index < 0)
+		{
+			ret.set_float(0);
+			return;
+		}
+		var touch = this.touches[index];
+		var layer, oldScale, oldZoomRate, oldParallaxX, oldAngle;
+		if (cr.is_undefined(layerparam))
+		{
+			layer = this.runtime.getLayerByNumber(0);
+			oldScale = layer.scale;
+			oldZoomRate = layer.zoomRate;
+			oldParallaxX = layer.parallaxX;
+			oldAngle = layer.angle;
+			layer.scale = this.runtime.running_layout.scale;
+			layer.zoomRate = 1.0;
+			layer.parallaxX = 1.0;
+			layer.angle = this.runtime.running_layout.angle;
+			ret.set_float(layer.canvasToLayer(touch.x, touch.y, true));
+			layer.scale = oldScale;
+			layer.zoomRate = oldZoomRate;
+			layer.parallaxX = oldParallaxX;
+			layer.angle = oldAngle;
+		}
+		else
+		{
+			if (cr.is_number(layerparam))
+				layer = this.runtime.getLayerByNumber(layerparam);
+			else
+				layer = this.runtime.getLayerByName(layerparam);
+			if (layer)
+				ret.set_float(layer.canvasToLayer(touch.x, touch.y, true));
+			else
+				ret.set_float(0);
+		}
+	};
+	Exps.prototype.Y = function (ret, layerparam)
+	{
+		if (this.touches.length)
+		{
+			var layer, oldScale, oldZoomRate, oldParallaxY, oldAngle;
+			if (cr.is_undefined(layerparam))
+			{
+				layer = this.runtime.getLayerByNumber(0);
+				oldScale = layer.scale;
+				oldZoomRate = layer.zoomRate;
+				oldParallaxY = layer.parallaxY;
+				oldAngle = layer.angle;
+				layer.scale = this.runtime.running_layout.scale;
+				layer.zoomRate = 1.0;
+				layer.parallaxY = 1.0;
+				layer.angle = this.runtime.running_layout.angle;
+				ret.set_float(layer.canvasToLayer(this.touches[0].x, this.touches[0].y, false));
+				layer.scale = oldScale;
+				layer.zoomRate = oldZoomRate;
+				layer.parallaxY = oldParallaxY;
+				layer.angle = oldAngle;
+			}
+			else
+			{
+				if (cr.is_number(layerparam))
+					layer = this.runtime.getLayerByNumber(layerparam);
+				else
+					layer = this.runtime.getLayerByName(layerparam);
+				if (layer)
+					ret.set_float(layer.canvasToLayer(this.touches[0].x, this.touches[0].y, false));
+				else
+					ret.set_float(0);
+			}
+		}
+		else
+			ret.set_float(0);
+	};
+	Exps.prototype.YAt = function (ret, index, layerparam)
+	{
+		index = Math.floor(index);
+		if (index < 0 || index >= this.touches.length)
+		{
+			ret.set_float(0);
+			return;
+		}
+		var layer, oldScale, oldZoomRate, oldParallaxY, oldAngle;
+		if (cr.is_undefined(layerparam))
+		{
+			layer = this.runtime.getLayerByNumber(0);
+			oldScale = layer.scale;
+			oldZoomRate = layer.zoomRate;
+			oldParallaxY = layer.parallaxY;
+			oldAngle = layer.angle;
+			layer.scale = this.runtime.running_layout.scale;
+			layer.zoomRate = 1.0;
+			layer.parallaxY = 1.0;
+			layer.angle = this.runtime.running_layout.angle;
+			ret.set_float(layer.canvasToLayer(this.touches[index].x, this.touches[index].y, false));
+			layer.scale = oldScale;
+			layer.zoomRate = oldZoomRate;
+			layer.parallaxY = oldParallaxY;
+			layer.angle = oldAngle;
+		}
+		else
+		{
+			if (cr.is_number(layerparam))
+				layer = this.runtime.getLayerByNumber(layerparam);
+			else
+				layer = this.runtime.getLayerByName(layerparam);
+			if (layer)
+				ret.set_float(layer.canvasToLayer(this.touches[index].x, this.touches[index].y, false));
+			else
+				ret.set_float(0);
+		}
+	};
+	Exps.prototype.YForID = function (ret, id, layerparam)
+	{
+		var index = this.findTouch(id);
+		if (index < 0)
+		{
+			ret.set_float(0);
+			return;
+		}
+		var touch = this.touches[index];
+		var layer, oldScale, oldZoomRate, oldParallaxY, oldAngle;
+		if (cr.is_undefined(layerparam))
+		{
+			layer = this.runtime.getLayerByNumber(0);
+			oldScale = layer.scale;
+			oldZoomRate = layer.zoomRate;
+			oldParallaxY = layer.parallaxY;
+			oldAngle = layer.angle;
+			layer.scale = this.runtime.running_layout.scale;
+			layer.zoomRate = 1.0;
+			layer.parallaxY = 1.0;
+			layer.angle = this.runtime.running_layout.angle;
+			ret.set_float(layer.canvasToLayer(touch.x, touch.y, false));
+			layer.scale = oldScale;
+			layer.zoomRate = oldZoomRate;
+			layer.parallaxY = oldParallaxY;
+			layer.angle = oldAngle;
+		}
+		else
+		{
+			if (cr.is_number(layerparam))
+				layer = this.runtime.getLayerByNumber(layerparam);
+			else
+				layer = this.runtime.getLayerByName(layerparam);
+			if (layer)
+				ret.set_float(layer.canvasToLayer(touch.x, touch.y, false));
+			else
+				ret.set_float(0);
+		}
+	};
+	Exps.prototype.AbsoluteX = function (ret)
+	{
+		if (this.touches.length)
+			ret.set_float(this.touches[0].x);
+		else
+			ret.set_float(0);
+	};
+	Exps.prototype.AbsoluteXAt = function (ret, index)
+	{
+		index = Math.floor(index);
+		if (index < 0 || index >= this.touches.length)
+		{
+			ret.set_float(0);
+			return;
+		}
+		ret.set_float(this.touches[index].x);
+	};
+	Exps.prototype.AbsoluteXForID = function (ret, id)
+	{
+		var index = this.findTouch(id);
+		if (index < 0)
+		{
+			ret.set_float(0);
+			return;
+		}
+		var touch = this.touches[index];
+		ret.set_float(touch.x);
+	};
+	Exps.prototype.AbsoluteY = function (ret)
+	{
+		if (this.touches.length)
+			ret.set_float(this.touches[0].y);
+		else
+			ret.set_float(0);
+	};
+	Exps.prototype.AbsoluteYAt = function (ret, index)
+	{
+		index = Math.floor(index);
+		if (index < 0 || index >= this.touches.length)
+		{
+			ret.set_float(0);
+			return;
+		}
+		ret.set_float(this.touches[index].y);
+	};
+	Exps.prototype.AbsoluteYForID = function (ret, id)
+	{
+		var index = this.findTouch(id);
+		if (index < 0)
+		{
+			ret.set_float(0);
+			return;
+		}
+		var touch = this.touches[index];
+		ret.set_float(touch.y);
+	};
+	Exps.prototype.SpeedAt = function (ret, index)
+	{
+		index = Math.floor(index);
+		if (index < 0 || index >= this.touches.length)
+		{
+			ret.set_float(0);
+			return;
+		}
+		var t = this.touches[index];
+		var dist = cr.distanceTo(t.x, t.y, t.lastx, t.lasty);
+		var timediff = (t.time - t.lasttime) / 1000;
+		if (timediff === 0)
+			ret.set_float(0);
+		else
+			ret.set_float(dist / timediff);
+	};
+	Exps.prototype.SpeedForID = function (ret, id)
+	{
+		var index = this.findTouch(id);
+		if (index < 0)
+		{
+			ret.set_float(0);
+			return;
+		}
+		var touch = this.touches[index];
+		var dist = cr.distanceTo(touch.x, touch.y, touch.lastx, touch.lasty);
+		var timediff = (touch.time - touch.lasttime) / 1000;
+		if (timediff === 0)
+			ret.set_float(0);
+		else
+			ret.set_float(dist / timediff);
+	};
+	Exps.prototype.AngleAt = function (ret, index)
+	{
+		index = Math.floor(index);
+		if (index < 0 || index >= this.touches.length)
+		{
+			ret.set_float(0);
+			return;
+		}
+		var t = this.touches[index];
+		ret.set_float(cr.to_degrees(cr.angleTo(t.lastx, t.lasty, t.x, t.y)));
+	};
+	Exps.prototype.AngleForID = function (ret, id)
+	{
+		var index = this.findTouch(id);
+		if (index < 0)
+		{
+			ret.set_float(0);
+			return;
+		}
+		var touch = this.touches[index];
+		ret.set_float(cr.to_degrees(cr.angleTo(touch.lastx, touch.lasty, touch.x, touch.y)));
+	};
+	Exps.prototype.Alpha = function (ret)
+	{
+		ret.set_float(this.getAlpha());
+	};
+	Exps.prototype.Beta = function (ret)
+	{
+		ret.set_float(this.getBeta());
+	};
+	Exps.prototype.Gamma = function (ret)
+	{
+		ret.set_float(this.getGamma());
+	};
+	Exps.prototype.AccelerationXWithG = function (ret)
+	{
+		ret.set_float(this.acc_g_x);
+	};
+	Exps.prototype.AccelerationYWithG = function (ret)
+	{
+		ret.set_float(this.acc_g_y);
+	};
+	Exps.prototype.AccelerationZWithG = function (ret)
+	{
+		ret.set_float(this.acc_g_z);
+	};
+	Exps.prototype.AccelerationX = function (ret)
+	{
+		ret.set_float(this.acc_x);
+	};
+	Exps.prototype.AccelerationY = function (ret)
+	{
+		ret.set_float(this.acc_y);
+	};
+	Exps.prototype.AccelerationZ = function (ret)
+	{
+		ret.set_float(this.acc_z);
+	};
+	Exps.prototype.TouchIndex = function (ret)
+	{
+		ret.set_int(this.trigger_index);
+	};
+	Exps.prototype.TouchID = function (ret)
+	{
+		ret.set_float(this.trigger_id);
+	};
+	pluginProto.exps = new Exps();
+}());
+;
+;
 cr.behaviors.Bullet = function(runtime)
 {
 	this.runtime = runtime;
@@ -14888,13 +15634,13 @@ cr.behaviors.Bullet = function(runtime)
 }());
 ;
 ;
-cr.behaviors.EightDir = function(runtime)
+cr.behaviors.Platform = function(runtime)
 {
 	this.runtime = runtime;
 };
 (function ()
 {
-	var behaviorProto = cr.behaviors.EightDir.prototype;
+	var behaviorProto = cr.behaviors.Platform.prototype;
 	behaviorProto.Type = function(behavior, objtype)
 	{
 		this.behavior = behavior;
@@ -14905,184 +15651,376 @@ cr.behaviors.EightDir = function(runtime)
 	behtypeProto.onCreate = function()
 	{
 	};
+	var ANIMMODE_STOPPED = 0;
+	var ANIMMODE_MOVING = 1;
+	var ANIMMODE_JUMPING = 2;
+	var ANIMMODE_FALLING = 3;
 	behaviorProto.Instance = function(type, inst)
 	{
 		this.type = type;
 		this.behavior = type.behavior;
 		this.inst = inst;				// associated object instance to modify
 		this.runtime = type.runtime;
-		this.upkey = false;
-		this.downkey = false;
 		this.leftkey = false;
 		this.rightkey = false;
+		this.jumpkey = false;
+		this.jumped = false;			// prevent bunnyhopping
 		this.ignoreInput = false;
-		this.simup = false;
-		this.simdown = false;
 		this.simleft = false;
 		this.simright = false;
-		this.lastuptick = -1;
-		this.lastdowntick = -1;
-		this.lastlefttick = -1;
-		this.lastrighttick = -1;
+		this.simjump = false;
+		this.lastFloorObject = null;
+		this.loadFloorObject = -1;
+		this.lastFloorX = 0;
+		this.lastFloorY = 0;
+		this.floorIsJumpthru = false;
+		this.animMode = ANIMMODE_STOPPED;
+		this.fallthrough = 0;			// fall through jump-thru.  >0 to disable, lasts a few ticks
+		this.firstTick = true;
 		this.dx = 0;
 		this.dy = 0;
 	};
 	var behinstProto = behaviorProto.Instance.prototype;
+	behinstProto.updateGravity = function()
+	{
+		this.downx = Math.cos(this.ga);
+		this.downy = Math.sin(this.ga);
+		this.rightx = Math.cos(this.ga - Math.PI / 2);
+		this.righty = Math.sin(this.ga - Math.PI / 2);
+		this.downx = cr.round6dp(this.downx);
+		this.downy = cr.round6dp(this.downy);
+		this.rightx = cr.round6dp(this.rightx);
+		this.righty = cr.round6dp(this.righty);
+		this.g1 = this.g;
+		if (this.g < 0)
+		{
+			this.downx *= -1;
+			this.downy *= -1;
+			this.g = Math.abs(this.g);
+		}
+	};
 	behinstProto.onCreate = function()
 	{
 		this.maxspeed = this.properties[0];
 		this.acc = this.properties[1];
 		this.dec = this.properties[2];
-		this.directions = this.properties[3];	// 0=Up & down, 1=Left & right, 2=4 directions, 3=8 directions"
-		this.angleMode = this.properties[4];	// 0=No,1=90-degree intervals, 2=45-degree intervals, 3=360 degree (smooth)
-		this.defaultControls = (this.properties[5] === 1);	// 0=no, 1=yes
-		this.enabled = (this.properties[6] !== 0);
+		this.jumpStrength = this.properties[3];
+		this.g = this.properties[4];
+		this.g1 = this.g;
+		this.maxFall = this.properties[5];
+		this.defaultControls = (this.properties[6] === 1);	// 0=no, 1=yes
+		this.enabled = (this.properties[7] !== 0);
+		this.wasOnFloor = false;
+		this.wasOverJumpthru = this.runtime.testOverlapJumpThru(this.inst);
+		this.ga = cr.to_radians(90);
+		this.updateGravity();
+		var self = this;
 		if (this.defaultControls && !this.runtime.isDomFree)
 		{
-			jQuery(document).keydown(
-				(function (self) {
-					return function(info) {
+			jQuery(document).keydown(function(info) {
 						self.onKeyDown(info);
-					};
-				})(this)
-			);
-			jQuery(document).keyup(
-				(function (self) {
-					return function(info) {
+					});
+			jQuery(document).keyup(function(info) {
 						self.onKeyUp(info);
-					};
-				})(this)
-			);
+					});
 		}
+		if (!this.recycled)
+		{
+			this.myDestroyCallback = function(inst) {
+										self.onInstanceDestroyed(inst);
+									};
+		}
+		this.runtime.addDestroyCallback(this.myDestroyCallback);
 	};
 	behinstProto.saveToJSON = function ()
 	{
 		return {
+			"ii": this.ignoreInput,
+			"lfx": this.lastFloorX,
+			"lfy": this.lastFloorY,
+			"lfo": (this.lastFloorObject ? this.lastFloorObject.uid : -1),
+			"am": this.animMode,
+			"en": this.enabled,
+			"fall": this.fallthrough,
+			"ft": this.firstTick,
 			"dx": this.dx,
 			"dy": this.dy,
-			"enabled": this.enabled,
-			"maxspeed": this.maxspeed,
+			"ms": this.maxspeed,
 			"acc": this.acc,
 			"dec": this.dec,
-			"ignoreInput": this.ignoreInput
+			"js": this.jumpStrength,
+			"g": this.g,
+			"g1": this.g1,
+			"mf": this.maxFall,
+			"wof": this.wasOnFloor,
+			"woj": this.wasOverJumpthru,
+			"ga": this.ga
 		};
 	};
 	behinstProto.loadFromJSON = function (o)
 	{
+		this.ignoreInput = o["ii"];
+		this.lastFloorX = o["lfx"];
+		this.lastFloorY = o["lfy"];
+		this.loadFloorObject = o["lfo"];
+		this.animMode = o["am"];
+		this.enabled = o["en"];
+		this.fallthrough = o["fall"];
+		this.firstTick = o["ft"];
 		this.dx = o["dx"];
 		this.dy = o["dy"];
-		this.enabled = o["enabled"];
-		this.maxspeed = o["maxspeed"];
+		this.maxspeed = o["ms"];
 		this.acc = o["acc"];
 		this.dec = o["dec"];
-		this.ignoreInput = o["ignoreInput"];
-		this.upkey = false;
-		this.downkey = false;
+		this.jumpStrength = o["js"];
+		this.g = o["g"];
+		this.g1 = o["g1"];
+		this.maxFall = o["mf"];
+		this.wasOnFloor = o["wof"];
+		this.wasOverJumpthru = o["woj"];
+		this.ga = o["ga"];
 		this.leftkey = false;
 		this.rightkey = false;
-		this.simup = false;
-		this.simdown = false;
+		this.jumpkey = false;
+		this.jumped = false;
 		this.simleft = false;
 		this.simright = false;
-		this.lastuptick = -1;
-		this.lastdowntick = -1;
-		this.lastlefttick = -1;
-		this.lastrighttick = -1;
+		this.simjump = false;
+		this.updateGravity();
+	};
+	behinstProto.afterLoad = function ()
+	{
+		if (this.loadFloorObject === -1)
+			this.lastFloorObject = null;
+		else
+			this.lastFloorObject = this.runtime.getObjectByUID(this.loadFloorObject);
+	};
+	behinstProto.onInstanceDestroyed = function (inst)
+	{
+		if (this.lastFloorObject == inst)
+			this.lastFloorObject = null;
+	};
+	behinstProto.onDestroy = function ()
+	{
+		this.lastFloorObject = null;
+		this.runtime.removeDestroyCallback(this.myDestroyCallback);
 	};
 	behinstProto.onKeyDown = function (info)
 	{
-		var tickcount = this.runtime.tickcount;
 		switch (info.which) {
-		case 37:	// left
-			info.preventDefault();
-			if (this.lastlefttick < tickcount)
-				this.leftkey = true;
-			break;
 		case 38:	// up
 			info.preventDefault();
-			if (this.lastuptick < tickcount)
-				this.upkey = true;
+			this.jumpkey = true;
+			break;
+		case 37:	// left
+			info.preventDefault();
+			this.leftkey = true;
 			break;
 		case 39:	// right
 			info.preventDefault();
-			if (this.lastrighttick < tickcount)
-				this.rightkey = true;
-			break;
-		case 40:	// down
-			info.preventDefault();
-			if (this.lastdowntick < tickcount)
-				this.downkey = true;
+			this.rightkey = true;
 			break;
 		}
 	};
 	behinstProto.onKeyUp = function (info)
 	{
-		var tickcount = this.runtime.tickcount;
 		switch (info.which) {
+		case 38:	// up
+			info.preventDefault();
+			this.jumpkey = false;
+			this.jumped = false;
+			break;
 		case 37:	// left
 			info.preventDefault();
 			this.leftkey = false;
-			this.lastlefttick = tickcount;
-			break;
-		case 38:	// up
-			info.preventDefault();
-			this.upkey = false;
-			this.lastuptick = tickcount;
 			break;
 		case 39:	// right
 			info.preventDefault();
 			this.rightkey = false;
-			this.lastrighttick = tickcount;
 			break;
-		case 40:	// down
-			info.preventDefault();
-			this.downkey = false;
-			this.lastdowntick = tickcount;
-			break;
+		}
+	};
+	behinstProto.getGDir = function ()
+	{
+		if (this.g < 0)
+			return -1;
+		else
+			return 1;
+	};
+	behinstProto.isOnFloor = function ()
+	{
+		var ret = null;
+		var ret2 = null;
+		var i, len, j;
+		var oldx = this.inst.x;
+		var oldy = this.inst.y;
+		this.inst.x += this.downx;
+		this.inst.y += this.downy;
+		this.inst.set_bbox_changed();
+		if (this.lastFloorObject && this.runtime.testOverlap(this.inst, this.lastFloorObject))
+		{
+			this.inst.x = oldx;
+			this.inst.y = oldy;
+			this.inst.set_bbox_changed();
+			return this.lastFloorObject;
+		}
+		else
+		{
+			ret = this.runtime.testOverlapSolid(this.inst);
+			if (!ret && this.fallthrough === 0)
+				ret2 = this.runtime.testOverlapJumpThru(this.inst, true);
+			this.inst.x = oldx;
+			this.inst.y = oldy;
+			this.inst.set_bbox_changed();
+			if (ret)		// was overlapping solid
+			{
+				if (this.runtime.testOverlap(this.inst, ret))
+					return null;
+				else
+				{
+					this.floorIsJumpthru = false;
+					return ret;
+				}
+			}
+			if (ret2 && ret2.length)
+			{
+				for (i = 0, j = 0, len = ret2.length; i < len; i++)
+				{
+					ret2[j] = ret2[i];
+					if (!this.runtime.testOverlap(this.inst, ret2[i]))
+						j++;
+				}
+				if (j >= 1)
+				{
+					this.floorIsJumpthru = true;
+					return ret2[0];
+				}
+			}
+			return null;
 		}
 	};
 	behinstProto.tick = function ()
 	{
+	};
+	behinstProto.posttick = function ()
+	{
 		var dt = this.runtime.getDt(this.inst);
+		var mx, my, obstacle, mag, allover, i, len, j, oldx, oldy;
+		if (!this.jumpkey && !this.simjump)
+			this.jumped = false;
 		var left = this.leftkey || this.simleft;
 		var right = this.rightkey || this.simright;
-		var up = this.upkey || this.simup;
-		var down = this.downkey || this.simdown;
+		var jump = (this.jumpkey || this.simjump) && !this.jumped;
 		this.simleft = false;
 		this.simright = false;
-		this.simup = false;
-		this.simdown = false;
+		this.simjump = false;
 		if (!this.enabled)
 			return;
-		var collobj = this.runtime.testOverlapSolid(this.inst);
-		if (collobj)
-		{
-			this.runtime.registerCollision(this.inst, collobj);
-			if (!this.runtime.pushOutSolidNearest(this.inst))
-				return;		// must be stuck in solid
-		}
 		if (this.ignoreInput)
 		{
 			left = false;
 			right = false;
-			up = false;
-			down = false;
+			jump = false;
 		}
-		if (this.directions === 0)
+		var lastFloor = this.lastFloorObject;
+		var floor_moved = false;
+		if (this.firstTick)
 		{
-			left = false;
-			right = false;
+			if (this.runtime.testOverlapSolid(this.inst) || this.runtime.testOverlapJumpThru(this.inst))
+			{
+				this.runtime.pushOutSolid(this.inst, -this.downx, -this.downy, 4, true);
+			}
+			this.firstTick = false;
 		}
-		else if (this.directions === 1)
+		if (lastFloor && this.dy === 0 && (lastFloor.y !== this.lastFloorY || lastFloor.x !== this.lastFloorX))
 		{
-			up = false;
-			down = false;
+			mx = (lastFloor.x - this.lastFloorX);
+			my = (lastFloor.y - this.lastFloorY);
+			this.inst.x += mx;
+			this.inst.y += my;
+			this.inst.set_bbox_changed();
+			this.lastFloorX = lastFloor.x;
+			this.lastFloorY = lastFloor.y;
+			floor_moved = true;
+			if (this.runtime.testOverlapSolid(this.inst))
+			{
+				this.runtime.pushOutSolid(this.inst, -mx, -my, Math.sqrt(mx * mx + my * my) * 2.5);
+			}
 		}
-		if (this.directions === 2 && (up || down))
+		var floor_ = this.isOnFloor();
+		var collobj = this.runtime.testOverlapSolid(this.inst);
+		if (collobj)
 		{
-			left = false;
-			right = false;
+			if (this.runtime.pushOutSolidNearest(this.inst, Math.max(this.inst.width, this.inst.height) / 2))
+				this.runtime.registerCollision(this.inst, collobj);
+			else
+				return;
 		}
+		if (floor_)
+		{
+			if (this.dy > 0)
+			{
+				if (!this.wasOnFloor)
+				{
+					this.runtime.pushInFractional(this.inst, -this.downx, -this.downy, floor_, 16);
+					this.wasOnFloor = true;
+				}
+				this.dy = 0;
+			}
+			if (lastFloor != floor_)
+			{
+				this.lastFloorObject = floor_;
+				this.lastFloorX = floor_.x;
+				this.lastFloorY = floor_.y;
+				this.runtime.registerCollision(this.inst, floor_);
+			}
+			else if (floor_moved)
+			{
+				collobj = this.runtime.testOverlapSolid(this.inst);
+				if (collobj)
+				{
+					this.runtime.registerCollision(this.inst, collobj);
+					if (mx !== 0)
+					{
+						if (mx > 0)
+							this.runtime.pushOutSolid(this.inst, -this.rightx, -this.righty);
+						else
+							this.runtime.pushOutSolid(this.inst, this.rightx, this.righty);
+					}
+					this.runtime.pushOutSolid(this.inst, -this.downx, -this.downy);
+				}
+			}
+			if (jump)
+			{
+				oldx = this.inst.x;
+				oldy = this.inst.y;
+				this.inst.x -= this.downx;
+				this.inst.y -= this.downy;
+				this.inst.set_bbox_changed();
+				if (!this.runtime.testOverlapSolid(this.inst))
+				{
+					this.runtime.trigger(cr.behaviors.Platform.prototype.cnds.OnJump, this.inst);
+					this.animMode = ANIMMODE_JUMPING;
+					this.dy = -this.jumpStrength;
+					this.jumped = true;
+				}
+				else
+					jump = false;
+				this.inst.x = oldx;
+				this.inst.y = oldy;
+				this.inst.set_bbox_changed();
+			}
+		}
+		else
+		{
+			this.lastFloorObject = null;
+			this.dy += this.g * dt;
+			if (this.dy > this.maxFall)
+				this.dy = this.maxFall;
+			if (jump)
+				this.jumped = true;
+		}
+		this.wasOnFloor = !!floor_;
 		if (left == right)	// both up or both down
 		{
 			if (this.dx < 0)
@@ -15096,21 +16034,6 @@ cr.behaviors.EightDir = function(runtime)
 				this.dx -= this.dec * dt;
 				if (this.dx < 0)
 					this.dx = 0;
-			}
-		}
-		if (up == down)
-		{
-			if (this.dy < 0)
-			{
-				this.dy += this.dec * dt;
-				if (this.dy > 0)
-					this.dy = 0;
-			}
-			else if (this.dy > 0)
-			{
-				this.dy -= this.dec * dt;
-				if (this.dy < 0)
-					this.dy = 0;
 			}
 		}
 		if (left && !right)
@@ -15127,76 +16050,229 @@ cr.behaviors.EightDir = function(runtime)
 			else
 				this.dx += this.acc * dt;
 		}
-		if (up && !down)
+		if (this.dx > this.maxspeed)
+			this.dx = this.maxspeed;
+		else if (this.dx < -this.maxspeed)
+			this.dx = -this.maxspeed;
+		var landed = false;
+		if (this.dx !== 0)
 		{
-			if (this.dy > 0)
-				this.dy -= (this.acc + this.dec) * dt;
-			else
-				this.dy -= this.acc * dt;
-		}
-		if (down && !up)
-		{
-			if (this.dy < 0)
-				this.dy += (this.acc + this.dec) * dt;
-			else
-				this.dy += this.acc * dt;
-		}
-		var ax, ay;
-		if (this.dx !== 0 || this.dy !== 0)
-		{
-			var speed = Math.sqrt(this.dx * this.dx + this.dy * this.dy);
-			if (speed > this.maxspeed)
-			{
-				var a = Math.atan2(this.dy, this.dx);
-				this.dx = this.maxspeed * Math.cos(a);
-				this.dy = this.maxspeed * Math.sin(a);
-			}
-			var oldx = this.inst.x;
-			var oldy = this.inst.y;
-			var oldangle = this.inst.angle;
-			this.inst.x += this.dx * dt;
+			oldx = this.inst.x;
+			oldy = this.inst.y;
+			mx = this.dx * dt * this.rightx;
+			my = this.dx * dt * this.righty;
+			this.inst.x += this.rightx * (this.dx > 1 ? 1 : -1) - this.downx;
+			this.inst.y += this.righty * (this.dx > 1 ? 1 : -1) - this.downy;
 			this.inst.set_bbox_changed();
-			collobj = this.runtime.testOverlapSolid(this.inst);
-			if (collobj)
+			var is_jumpthru = false;
+			var slope_too_steep = this.runtime.testOverlapSolid(this.inst);
+			/*
+			if (!slope_too_steep && floor_)
 			{
-				this.inst.x = oldx;
-				this.dx = 0;
-				this.inst.set_bbox_changed();
-				this.runtime.registerCollision(this.inst, collobj);
-			}
-			this.inst.y += this.dy * dt;
-			this.inst.set_bbox_changed();
-			collobj = this.runtime.testOverlapSolid(this.inst);
-			if (collobj)
-			{
-				this.inst.y = oldy;
-				this.dy = 0;
-				this.inst.set_bbox_changed();
-				this.runtime.registerCollision(this.inst, collobj);
-			}
-			ax = cr.round6dp(this.dx);
-			ay = cr.round6dp(this.dy);
-			if (ax !== 0 || ay !== 0)
-			{
-				if (this.angleMode === 1)	// 90 degree intervals
-					this.inst.angle = cr.to_clamped_radians(Math.round(cr.to_degrees(Math.atan2(ay, ax)) / 90.0) * 90.0);
-				else if (this.angleMode === 2)	// 45 degree intervals
-					this.inst.angle = cr.to_clamped_radians(Math.round(cr.to_degrees(Math.atan2(ay, ax)) / 45.0) * 45.0);
-				else if (this.angleMode === 3)	// 360 degree
-					this.inst.angle = Math.atan2(ay, ax);
-			}
-			this.inst.set_bbox_changed();
-			if (this.inst.angle != oldangle)
-			{
-				collobj = this.runtime.testOverlapSolid(this.inst);
-				if (collobj)
+				slope_too_steep = this.runtime.testOverlapJumpThru(this.inst);
+				is_jumpthru = true;
+				if (slope_too_steep)
 				{
-					this.inst.angle = oldangle;
+					this.inst.x = oldx;
+					this.inst.y = oldy;
 					this.inst.set_bbox_changed();
-					this.runtime.registerCollision(this.inst, collobj);
+					if (this.runtime.testOverlap(this.inst, slope_too_steep))
+					{
+						slope_too_steep = null;
+						is_jumpthru = false;
+					}
+				}
+			}
+			*/
+			this.inst.x = oldx + mx;
+			this.inst.y = oldy + my;
+			this.inst.set_bbox_changed();
+			obstacle = this.runtime.testOverlapSolid(this.inst);
+			if (!obstacle && floor_)
+			{
+				obstacle = this.runtime.testOverlapJumpThru(this.inst);
+				if (obstacle)
+				{
+					this.inst.x = oldx;
+					this.inst.y = oldy;
+					this.inst.set_bbox_changed();
+					if (this.runtime.testOverlap(this.inst, obstacle))
+					{
+						obstacle = null;
+						is_jumpthru = false;
+					}
+					else
+						is_jumpthru = true;
+					this.inst.x = oldx + mx;
+					this.inst.y = oldy + my;
+					this.inst.set_bbox_changed();
+				}
+			}
+			if (obstacle)
+			{
+				var push_dist = Math.abs(this.dx * dt) + 2;
+				if (slope_too_steep || !this.runtime.pushOutSolid(this.inst, -this.downx, -this.downy, push_dist, is_jumpthru, obstacle))
+				{
+					this.runtime.registerCollision(this.inst, obstacle);
+					push_dist = Math.max(Math.abs(this.dx * dt * 2.5), 30);
+					if (!this.runtime.pushOutSolid(this.inst, this.rightx * (this.dx < 0 ? 1 : -1), this.righty * (this.dx < 0 ? 1 : -1), push_dist, false))
+					{
+						this.inst.x = oldx;
+						this.inst.y = oldy;
+						this.inst.set_bbox_changed();
+					}
+					else if (floor_ && !is_jumpthru && !this.floorIsJumpthru)
+					{
+						oldx = this.inst.x;
+						oldy = this.inst.y;
+						this.inst.x += this.downx;
+						this.inst.y += this.downy;
+						if (this.runtime.testOverlapSolid(this.inst))
+						{
+							if (!this.runtime.pushOutSolid(this.inst, -this.downx, -this.downy, 3, false))
+							{
+								this.inst.x = oldx;
+								this.inst.y = oldy;
+								this.inst.set_bbox_changed();
+							}
+						}
+						else
+						{
+							this.inst.x = oldx;
+							this.inst.y = oldy;
+							this.inst.set_bbox_changed();
+						}
+					}
+					if (!is_jumpthru)
+						this.dx = 0;	// stop
+				}
+				else if (!slope_too_steep && Math.abs(this.dy) < 15)
+				{
+					this.dy = 0;
+					if (!floor_)
+						landed = true;
+				}
+			}
+			else
+			{
+				var newfloor = this.isOnFloor();
+				if (floor_ && !newfloor)
+				{
+					mag = Math.ceil(Math.abs(this.dx * dt)) + 2;
+					oldx = this.inst.x;
+					oldy = this.inst.y;
+					this.inst.x += this.downx * mag;
+					this.inst.y += this.downy * mag;
+					this.inst.set_bbox_changed();
+					if (this.runtime.testOverlapSolid(this.inst) || this.runtime.testOverlapJumpThru(this.inst))
+						this.runtime.pushOutSolid(this.inst, -this.downx, -this.downy, mag + 2, true);
+					else
+					{
+						this.inst.x = oldx;
+						this.inst.y = oldy;
+						this.inst.set_bbox_changed();
+					}
+				}
+				else if (newfloor && this.dy === 0)
+				{
+					this.runtime.pushInFractional(this.inst, -this.downx, -this.downy, newfloor, 16);
 				}
 			}
 		}
+		if (this.dy !== 0)
+		{
+			oldx = this.inst.x;
+			oldy = this.inst.y;
+			this.inst.x += this.dy * dt * this.downx;
+			this.inst.y += this.dy * dt * this.downy;
+			var newx = this.inst.x;
+			var newy = this.inst.y;
+			this.inst.set_bbox_changed();
+			collobj = this.runtime.testOverlapSolid(this.inst);
+			var fell_on_jumpthru = false;
+			if (!collobj && (this.dy > 0) && !floor_)
+			{
+				allover = this.fallthrough > 0 ? null : this.runtime.testOverlapJumpThru(this.inst, true);
+				if (allover && allover.length)
+				{
+					if (this.wasOverJumpthru)
+					{
+						this.inst.x = oldx;
+						this.inst.y = oldy;
+						this.inst.set_bbox_changed();
+						for (i = 0, j = 0, len = allover.length; i < len; i++)
+						{
+							allover[j] = allover[i];
+							if (!this.runtime.testOverlap(this.inst, allover[i]))
+								j++;
+						}
+						allover.length = j;
+						this.inst.x = newx;
+						this.inst.y = newy;
+						this.inst.set_bbox_changed();
+					}
+					if (allover.length >= 1)
+						collobj = allover[0];
+				}
+				fell_on_jumpthru = !!collobj;
+			}
+			if (collobj)
+			{
+				this.runtime.registerCollision(this.inst, collobj);
+				var push_dist = (fell_on_jumpthru ? Math.abs(this.dy * dt * 2.5 + 10) : Math.max(Math.abs(this.dy * dt * 2.5 + 10), 30));
+				if (!this.runtime.pushOutSolid(this.inst, this.downx * (this.dy < 0 ? 1 : -1), this.downy * (this.dy < 0 ? 1 : -1), push_dist, fell_on_jumpthru, collobj))
+				{
+					this.inst.x = oldx;
+					this.inst.y = oldy;
+					this.inst.set_bbox_changed();
+					this.wasOnFloor = true;		// prevent adjustment for unexpected floor landings
+					if (!fell_on_jumpthru)
+						this.dy = 0;	// stop
+				}
+				else
+				{
+					this.lastFloorObject = collobj;
+					this.lastFloorX = collobj.x;
+					this.lastFloorY = collobj.y;
+					this.floorIsJumpthru = fell_on_jumpthru;
+					if (fell_on_jumpthru)
+						landed = true;
+					this.dy = 0;	// stop
+				}
+			}
+		}
+		if (this.animMode !== ANIMMODE_FALLING && this.dy > 0 && !floor_)
+		{
+			this.runtime.trigger(cr.behaviors.Platform.prototype.cnds.OnFall, this.inst);
+			this.animMode = ANIMMODE_FALLING;
+		}
+		if (floor_ || landed)
+		{
+			if (this.animMode === ANIMMODE_FALLING || landed || (jump && this.dy === 0))
+			{
+				this.runtime.trigger(cr.behaviors.Platform.prototype.cnds.OnLand, this.inst);
+				if (this.dx === 0 && this.dy === 0)
+					this.animMode = ANIMMODE_STOPPED;
+				else
+					this.animMode = ANIMMODE_MOVING;
+			}
+			else
+			{
+				if (this.animMode !== ANIMMODE_STOPPED && this.dx === 0 && this.dy === 0)
+				{
+					this.runtime.trigger(cr.behaviors.Platform.prototype.cnds.OnStop, this.inst);
+					this.animMode = ANIMMODE_STOPPED;
+				}
+				if (this.animMode !== ANIMMODE_MOVING && (this.dx !== 0 || this.dy !== 0) && !jump)
+				{
+					this.runtime.trigger(cr.behaviors.Platform.prototype.cnds.OnMove, this.inst);
+					this.animMode = ANIMMODE_MOVING;
+				}
+			}
+		}
+		if (this.fallthrough > 0)
+			this.fallthrough--;
+		this.wasOverJumpthru = this.runtime.testOverlapJumpThru(this.inst);
 	};
 	function Cnds() {};
 	Cnds.prototype.IsMoving = function ()
@@ -15208,31 +16284,106 @@ cr.behaviors.EightDir = function(runtime)
 		var speed = Math.sqrt(this.dx * this.dx + this.dy * this.dy);
 		return cr.do_cmp(speed, cmp, s);
 	};
+	Cnds.prototype.IsOnFloor = function ()
+	{
+		if (this.dy !== 0)
+			return false;
+		var ret = null;
+		var ret2 = null;
+		var i, len, j;
+		var oldx = this.inst.x;
+		var oldy = this.inst.y;
+		this.inst.x += this.downx;
+		this.inst.y += this.downy;
+		this.inst.set_bbox_changed();
+		ret = this.runtime.testOverlapSolid(this.inst);
+		if (!ret && this.fallthrough === 0)
+			ret2 = this.runtime.testOverlapJumpThru(this.inst, true);
+		this.inst.x = oldx;
+		this.inst.y = oldy;
+		this.inst.set_bbox_changed();
+		if (ret)		// was overlapping solid
+		{
+			return !this.runtime.testOverlap(this.inst, ret);
+		}
+		if (ret2 && ret2.length)
+		{
+			for (i = 0, j = 0, len = ret2.length; i < len; i++)
+			{
+				ret2[j] = ret2[i];
+				if (!this.runtime.testOverlap(this.inst, ret2[i]))
+					j++;
+			}
+			if (j >= 1)
+				return true;
+		}
+		return false;
+	};
+	Cnds.prototype.IsByWall = function (side)
+	{
+		var ret = false;
+		var oldx = this.inst.x;
+		var oldy = this.inst.y;
+		this.inst.x -= this.downx * 3;
+		this.inst.y -= this.downy * 3;
+		this.inst.set_bbox_changed();
+		if (this.runtime.testOverlapSolid(this.inst))
+		{
+			this.inst.x = oldx;
+			this.inst.y = oldy;
+			this.inst.set_bbox_changed();
+			return false;
+		}
+		if (side === 0)		// left
+		{
+			this.inst.x -= this.rightx * 2;
+			this.inst.y -= this.righty * 2;
+		}
+		else
+		{
+			this.inst.x += this.rightx * 2;
+			this.inst.y += this.righty * 2;
+		}
+		this.inst.set_bbox_changed();
+		ret = this.runtime.testOverlapSolid(this.inst);
+		this.inst.x = oldx;
+		this.inst.y = oldy;
+		this.inst.set_bbox_changed();
+		return ret;
+	};
+	Cnds.prototype.IsJumping = function ()
+	{
+		return this.dy < 0;
+	};
+	Cnds.prototype.IsFalling = function ()
+	{
+		return this.dy > 0;
+	};
+	Cnds.prototype.OnJump = function ()
+	{
+		return true;
+	};
+	Cnds.prototype.OnFall = function ()
+	{
+		return true;
+	};
+	Cnds.prototype.OnStop = function ()
+	{
+		return true;
+	};
+	Cnds.prototype.OnMove = function ()
+	{
+		return true;
+	};
+	Cnds.prototype.OnLand = function ()
+	{
+		return true;
+	};
 	behaviorProto.cnds = new Cnds();
 	function Acts() {};
-	Acts.prototype.Stop = function ()
-	{
-		this.dx = 0;
-		this.dy = 0;
-	};
-	Acts.prototype.Reverse = function ()
-	{
-		this.dx *= -1;
-		this.dy *= -1;
-	};
 	Acts.prototype.SetIgnoreInput = function (ignoring)
 	{
 		this.ignoreInput = ignoring;
-	};
-	Acts.prototype.SetSpeed = function (speed)
-	{
-		if (speed < 0)
-			speed = 0;
-		if (speed > this.maxspeed)
-			speed = this.maxspeed;
-		var a = Math.atan2(this.dy, this.dx);
-		this.dx = speed * Math.cos(a);
-		this.dy = speed * Math.sin(a);
 	};
 	Acts.prototype.SetMaxSpeed = function (maxspeed)
 	{
@@ -15252,26 +16403,83 @@ cr.behaviors.EightDir = function(runtime)
 		if (this.dec < 0)
 			this.dec = 0;
 	};
+	Acts.prototype.SetJumpStrength = function (js)
+	{
+		this.jumpStrength = js;
+		if (this.jumpStrength < 0)
+			this.jumpStrength = 0;
+	};
+	Acts.prototype.SetGravity = function (grav)
+	{
+		if (this.g1 === grav)
+			return;		// no change
+		this.g = grav;
+		this.updateGravity();
+		if (this.runtime.testOverlapSolid(this.inst))
+		{
+			this.runtime.pushOutSolid(this.inst, this.downx, this.downy, 10);
+			this.inst.x += this.downx * 2;
+			this.inst.y += this.downy * 2;
+			this.inst.set_bbox_changed();
+		}
+		this.lastFloorObject = null;
+	};
+	Acts.prototype.SetMaxFallSpeed = function (mfs)
+	{
+		this.maxFall = mfs;
+		if (this.maxFall < 0)
+			this.maxFall = 0;
+	};
 	Acts.prototype.SimulateControl = function (ctrl)
 	{
 		switch (ctrl) {
 		case 0:		this.simleft = true;	break;
 		case 1:		this.simright = true;	break;
-		case 2:		this.simup = true;		break;
-		case 3:		this.simdown = true;	break;
+		case 2:		this.simjump = true;	break;
 		}
+	};
+	Acts.prototype.SetVectorX = function (vx)
+	{
+		this.dx = vx;
+	};
+	Acts.prototype.SetVectorY = function (vy)
+	{
+		this.dy = vy;
+	};
+	Acts.prototype.SetGravityAngle = function (a)
+	{
+		a = cr.to_radians(a);
+		a = cr.clamp_angle(a);
+		if (this.ga === a)
+			return;		// no change
+		this.ga = a;
+		this.updateGravity();
+		this.lastFloorObject = null;
 	};
 	Acts.prototype.SetEnabled = function (en)
 	{
-		this.enabled = (en === 1);
+		if (this.enabled !== (en === 1))
+		{
+			this.enabled = (en === 1);
+			if (!this.enabled)
+				this.lastFloorObject = null;
+		}
 	};
-	Acts.prototype.SetVectorX = function (x_)
+	Acts.prototype.FallThrough = function ()
 	{
-		this.dx = x_;
-	};
-	Acts.prototype.SetVectorY = function (y_)
-	{
-		this.dy = y_;
+		var oldx = this.inst.x;
+		var oldy = this.inst.y;
+		this.inst.x += this.downx;
+		this.inst.y += this.downy;
+		this.inst.set_bbox_changed();
+		var overlaps = this.runtime.testOverlapJumpThru(this.inst, false);
+		this.inst.x = oldx;
+		this.inst.y = oldy;
+		this.inst.set_bbox_changed();
+		if (!overlaps)
+			return;
+		this.fallthrough = 3;			// disable jumpthrus for 3 ticks (1 doesn't do it, 2 does, 3 to be on safe side)
+		this.lastFloorObject = null;
 	};
 	behaviorProto.acts = new Acts();
 	function Exps() {};
@@ -15291,6 +16499,22 @@ cr.behaviors.EightDir = function(runtime)
 	{
 		ret.set_float(this.dec);
 	};
+	Exps.prototype.JumpStrength = function (ret)
+	{
+		ret.set_float(this.jumpStrength);
+	};
+	Exps.prototype.Gravity = function (ret)
+	{
+		ret.set_float(this.g);
+	};
+	Exps.prototype.GravityAngle = function (ret)
+	{
+		ret.set_float(cr.to_degrees(this.ga));
+	};
+	Exps.prototype.MaxFallSpeed = function (ret)
+	{
+		ret.set_float(this.maxFall);
+	};
 	Exps.prototype.MovingAngle = function (ret)
 	{
 		ret.set_float(cr.to_degrees(Math.atan2(this.dy, this.dx)));
@@ -15307,13 +16531,13 @@ cr.behaviors.EightDir = function(runtime)
 }());
 ;
 ;
-cr.behaviors.Fade = function(runtime)
+cr.behaviors.solid = function(runtime)
 {
 	this.runtime = runtime;
 };
 (function ()
 {
-	var behaviorProto = cr.behaviors.Fade.prototype;
+	var behaviorProto = cr.behaviors.solid.prototype;
 	behaviorProto.Type = function(behavior, objtype)
 	{
 		this.behavior = behavior;
@@ -15334,350 +16558,21 @@ cr.behaviors.Fade = function(runtime)
 	var behinstProto = behaviorProto.Instance.prototype;
 	behinstProto.onCreate = function()
 	{
-		var active_at_start = this.properties[0] === 1;
-		this.fadeInTime = this.properties[1];
-		this.waitTime = this.properties[2];
-		this.fadeOutTime = this.properties[3];
-		this.destroy = this.properties[4];			// 0 = no, 1 = after fade out
-		this.stage = active_at_start ? 0 : 3;		// 0 = fade in, 1 = wait, 2 = fade out, 3 = done
-		if (this.recycled)
-			this.stageTime.reset();
-		else
-			this.stageTime = new cr.KahanAdder();
-		this.maxOpacity = (this.inst.opacity ? this.inst.opacity : 1.0);
-		if (active_at_start)
-		{
-			if (this.fadeInTime === 0)
-			{
-				this.stage = 1;
-				if (this.waitTime === 0)
-					this.stage = 2;
-			}
-			else
-			{
-				this.inst.opacity = 0;
-				this.runtime.redraw = true;
-			}
-		}
-	};
-	behinstProto.saveToJSON = function ()
-	{
-		return {
-			"fit": this.fadeInTime,
-			"wt": this.waitTime,
-			"fot": this.fadeOutTime,
-			"s": this.stage,
-			"st": this.stageTime.sum,
-			"mo": this.maxOpacity,
-		};
-	};
-	behinstProto.loadFromJSON = function (o)
-	{
-		this.fadeInTime = o["fit"];
-		this.waitTime = o["wt"];
-		this.fadeOutTime = o["fot"];
-		this.stage = o["s"];
-		this.stageTime.reset();
-		this.stageTime.sum = o["st"];
-		this.maxOpacity = o["mo"];
+		this.inst.extra.solidEnabled = (this.properties[0] !== 0);
 	};
 	behinstProto.tick = function ()
 	{
-		this.stageTime.add(this.runtime.getDt(this.inst));
-		if (this.stage === 0)
-		{
-			this.inst.opacity = (this.stageTime.sum / this.fadeInTime) * this.maxOpacity;
-			this.runtime.redraw = true;
-			if (this.inst.opacity >= this.maxOpacity)
-			{
-				this.inst.opacity = this.maxOpacity;
-				this.stage = 1;	// wait stage
-				this.stageTime.reset();
-			}
-		}
-		if (this.stage === 1)
-		{
-			if (this.stageTime.sum >= this.waitTime)
-			{
-				this.stage = 2;	// fade out stage
-				this.stageTime.reset();
-			}
-		}
-		if (this.stage === 2)
-		{
-			if (this.fadeOutTime !== 0)
-			{
-				this.inst.opacity = this.maxOpacity - ((this.stageTime.sum / this.fadeOutTime) * this.maxOpacity);
-				this.runtime.redraw = true;
-				if (this.inst.opacity < 0)
-				{
-					this.inst.opacity = 0;
-					this.stage = 3;	// done
-					this.stageTime.reset();
-					this.runtime.trigger(cr.behaviors.Fade.prototype.cnds.OnFadeOutEnd, this.inst);
-					if (this.destroy === 1)
-						this.runtime.DestroyInstance(this.inst);
-				}
-			}
-		}
-	};
-	behinstProto.doStart = function ()
-	{
-		this.stage = 0;
-		this.stageTime.reset();
-		if (this.fadeInTime === 0)
-		{
-			this.stage = 1;
-			if (this.waitTime === 0)
-				this.stage = 2;
-		}
-		else
-		{
-			this.inst.opacity = 0;
-			this.runtime.redraw = true;
-		}
 	};
 	function Cnds() {};
-	Cnds.prototype.OnFadeOutEnd = function ()
+	Cnds.prototype.IsEnabled = function ()
 	{
-		return true;
+		return this.inst.extra.solidEnabled;
 	};
 	behaviorProto.cnds = new Cnds();
 	function Acts() {};
-	Acts.prototype.StartFade = function ()
-	{
-		if (this.stage === 3)
-			this.doStart();
-	};
-	Acts.prototype.RestartFade = function ()
-	{
-		this.doStart();
-	};
-	behaviorProto.acts = new Acts();
-}());
-;
-;
-cr.behaviors.bound = function(runtime)
-{
-	this.runtime = runtime;
-};
-(function ()
-{
-	var behaviorProto = cr.behaviors.bound.prototype;
-	behaviorProto.Type = function(behavior, objtype)
-	{
-		this.behavior = behavior;
-		this.objtype = objtype;
-		this.runtime = behavior.runtime;
-	};
-	var behtypeProto = behaviorProto.Type.prototype;
-	behtypeProto.onCreate = function()
-	{
-	};
-	behaviorProto.Instance = function(type, inst)
-	{
-		this.type = type;
-		this.behavior = type.behavior;
-		this.inst = inst;				// associated object instance to modify
-		this.runtime = type.runtime;
-		this.mode = 0;
-	};
-	var behinstProto = behaviorProto.Instance.prototype;
-	behinstProto.onCreate = function()
-	{
-		this.mode = this.properties[0];	// 0 = origin, 1 = edge
-	};
-	behinstProto.tick = function ()
-	{
-	};
-	behinstProto.tick2 = function ()
-	{
-		this.inst.update_bbox();
-		var bbox = this.inst.bbox;
-		var layout = this.inst.layer.layout;
-		var changed = false;
-		if (this.mode === 0)	// origin
-		{
-			if (this.inst.x < 0)
-			{
-				this.inst.x = 0;
-				changed = true;
-			}
-			if (this.inst.y < 0)
-			{
-				this.inst.y = 0;
-				changed = true;
-			}
-			if (this.inst.x > layout.width)
-			{
-				this.inst.x = layout.width;
-				changed = true;
-			}
-			if (this.inst.y > layout.height)
-			{
-				this.inst.y = layout.height;
-				changed = true;
-			}
-		}
-		else
-		{
-			if (bbox.left < 0)
-			{
-				this.inst.x -= bbox.left;
-				changed = true;
-			}
-			if (bbox.top < 0)
-			{
-				this.inst.y -= bbox.top;
-				changed = true;
-			}
-			if (bbox.right > layout.width)
-			{
-				this.inst.x -= (bbox.right - layout.width);
-				changed = true;
-			}
-			if (bbox.bottom > layout.height)
-			{
-				this.inst.y -= (bbox.bottom - layout.height);
-				changed = true;
-			}
-		}
-		if (changed)
-			this.inst.set_bbox_changed();
-	};
-}());
-;
-;
-cr.behaviors.destroy = function(runtime)
-{
-	this.runtime = runtime;
-};
-(function ()
-{
-	var behaviorProto = cr.behaviors.destroy.prototype;
-	behaviorProto.Type = function(behavior, objtype)
-	{
-		this.behavior = behavior;
-		this.objtype = objtype;
-		this.runtime = behavior.runtime;
-	};
-	var behtypeProto = behaviorProto.Type.prototype;
-	behtypeProto.onCreate = function()
-	{
-	};
-	behaviorProto.Instance = function(type, inst)
-	{
-		this.type = type;
-		this.behavior = type.behavior;
-		this.inst = inst;				// associated object instance to modify
-		this.runtime = type.runtime;
-	};
-	var behinstProto = behaviorProto.Instance.prototype;
-	behinstProto.onCreate = function()
-	{
-	};
-	behinstProto.tick = function ()
-	{
-		this.inst.update_bbox();
-		var bbox = this.inst.bbox;
-		var layout = this.inst.layer.layout;
-		if (bbox.right < 0 || bbox.bottom < 0 || bbox.left > layout.width || bbox.top > layout.height)
-			this.runtime.DestroyInstance(this.inst);
-	};
-}());
-;
-;
-cr.behaviors.scrollto = function(runtime)
-{
-	this.runtime = runtime;
-	this.shakeMag = 0;
-	this.shakeStart = 0;
-	this.shakeEnd = 0;
-	this.shakeMode = 0;
-};
-(function ()
-{
-	var behaviorProto = cr.behaviors.scrollto.prototype;
-	behaviorProto.Type = function(behavior, objtype)
-	{
-		this.behavior = behavior;
-		this.objtype = objtype;
-		this.runtime = behavior.runtime;
-	};
-	var behtypeProto = behaviorProto.Type.prototype;
-	behtypeProto.onCreate = function()
-	{
-	};
-	behaviorProto.Instance = function(type, inst)
-	{
-		this.type = type;
-		this.behavior = type.behavior;
-		this.inst = inst;				// associated object instance to modify
-		this.runtime = type.runtime;
-	};
-	var behinstProto = behaviorProto.Instance.prototype;
-	behinstProto.onCreate = function()
-	{
-		this.enabled = (this.properties[0] !== 0);
-	};
-	behinstProto.saveToJSON = function ()
-	{
-		return {
-			"smg": this.behavior.shakeMag,
-			"ss": this.behavior.shakeStart,
-			"se": this.behavior.shakeEnd,
-			"smd": this.behavior.shakeMode
-		};
-	};
-	behinstProto.loadFromJSON = function (o)
-	{
-		this.behavior.shakeMag = o["smg"];
-		this.behavior.shakeStart = o["ss"];
-		this.behavior.shakeEnd = o["se"];
-		this.behavior.shakeMode = o["smd"];
-	};
-	behinstProto.tick = function ()
-	{
-	};
-	behinstProto.tick2 = function ()
-	{
-		if (!this.enabled)
-			return;
-		var all = this.behavior.my_instances.values();
-		var sumx = 0, sumy = 0;
-		var i, len;
-		for (i = 0, len = all.length; i < len; i++)
-		{
-			sumx += all[i].x;
-			sumy += all[i].y;
-		}
-		var layout = this.inst.layer.layout;
-		var now = this.runtime.kahanTime.sum;
-		var offx = 0, offy = 0;
-		if (now >= this.behavior.shakeStart && now < this.behavior.shakeEnd)
-		{
-			var mag = this.behavior.shakeMag * Math.min(this.runtime.timescale, 1);
-			if (this.behavior.shakeMode === 0)
-				mag *= 1 - (now - this.behavior.shakeStart) / (this.behavior.shakeEnd - this.behavior.shakeStart);
-			var a = Math.random() * Math.PI * 2;
-			var d = Math.random() * mag;
-			offx = Math.cos(a) * d;
-			offy = Math.sin(a) * d;
-		}
-		layout.scrollToX(sumx / all.length + offx);
-		layout.scrollToY(sumy / all.length + offy);
-	};
-	function Acts() {};
-	Acts.prototype.Shake = function (mag, dur, mode)
-	{
-		this.behavior.shakeMag = mag;
-		this.behavior.shakeStart = this.runtime.kahanTime.sum;
-		this.behavior.shakeEnd = this.behavior.shakeStart + dur;
-		this.behavior.shakeMode = mode;
-	};
 	Acts.prototype.SetEnabled = function (e)
 	{
-		this.enabled = (e !== 0);
+		this.inst.extra.solidEnabled = !!e;
 	};
 	behaviorProto.acts = new Acts();
 }());
@@ -15687,18 +16582,6 @@ cr.getProjectModel = function() { return [
 	[
 	[
 		cr.plugins_.Keyboard,
-		true,
-		false,
-		false,
-		false,
-		false,
-		false,
-		false,
-		false,
-		false
-	]
-,	[
-		cr.plugins_.Mouse,
 		true,
 		false,
 		false,
@@ -15745,6 +16628,18 @@ cr.getProjectModel = function() { return [
 		true,
 		true
 	]
+,	[
+		cr.plugins_.Touch,
+		true,
+		false,
+		false,
+		false,
+		false,
+		false,
+		false,
+		false,
+		false
+	]
 	],
 	[
 	[
@@ -15752,227 +16647,105 @@ cr.getProjectModel = function() { return [
 		cr.plugins_.TiledBg,
 		false,
 		[],
+		1,
 		0,
-		0,
-		["img/tiledbackground.png", 181209, 0],
+		["img/tiledbackground.png", 47054, 0],
 		null,
 		[
+		[
+			"Bullet",
+			cr.behaviors.Bullet,
+			3806967051100785
+		]
 		],
 		false,
 		false,
-		8801897832091767,
+		1441241478122829,
 		[],
 		null
 	]
 ,	[
 		"t1",
-		cr.plugins_.Sprite,
+		cr.plugins_.TiledBg,
 		false,
 		[],
-		3,
+		2,
 		0,
+		["img/block.png", 776, 0],
 		null,
 		[
-			[
-			"Default",
-			5,
-			false,
-			1,
-			0,
-			false,
-			9326890373732097,
-			[
-				["img/player-sheet0.png", 12658, 0, 0, 101, 101, 1, 0.504951, 0.504951,[["Imagepoint 1", 1.0495, 0.504951]],[-0.444307,-0.284654,-0.0903465,-0.504951,0.337871,-0.00742552,-0.00990051,0.465346,-0.340347,0.292079,-0.485149,-0.00990051],0]
-			]
-			]
-		],
 		[
-		[
-			"8Direction",
-			cr.behaviors.EightDir,
-			6864171881221815
+			"Solid",
+			cr.behaviors.solid,
+			4307772081871283
 		]
 ,		[
-			"BoundToLayout",
-			cr.behaviors.bound,
-			2992849864667216
-		]
-,		[
-			"ScrollTo",
-			cr.behaviors.scrollto,
-			6590840852803922
+			"Bullet",
+			cr.behaviors.Bullet,
+			6902236305319349
 		]
 		],
 		false,
 		false,
-		1872078364577339,
+		962740264780414,
 		[],
 		null
 	]
 ,	[
 		"t2",
-		cr.plugins_.Mouse,
+		cr.plugins_.Sprite,
 		false,
 		[],
+		1,
 		0,
-		0,
-		null,
 		null,
 		[
+			[
+			"Default",
+			5,
+			false,
+			1,
+			0,
+			false,
+			3262029896059816,
+			[
+				["img/player-sheet0.png", 2815, 0, 0, 35, 39, 1, 0.514286, 0.512821,[],[],0]
+			]
+			]
+		],
+		[
+		[
+			"Platform",
+			cr.behaviors.Platform,
+			8923673781044824
+		]
 		],
 		false,
 		false,
-		8795177667595723,
+		8298217949294851,
 		[],
 		null
-		,[]
 	]
 ,	[
 		"t3",
-		cr.plugins_.Sprite,
+		cr.plugins_.Touch,
 		false,
 		[],
-		2,
+		0,
 		0,
 		null,
+		null,
 		[
-			[
-			"Default",
-			5,
-			false,
-			1,
-			0,
-			false,
-			3923927565869058,
-			[
-				["img/bullet-sheet0.png", 640, 0, 0, 25, 12, 1, 0.52, 0.5,[],[-0.44,-0.333333,-0.04,-0.333333,0.32,-0.166667,0.4,0,0.32,0.166667,-0.04,0.333333,-0.44,0.333333],0]
-			]
-			]
-		],
-		[
-		[
-			"DestroyOutsideLayout",
-			cr.behaviors.destroy,
-			2582586054158629
-		]
-,		[
-			"Bullet",
-			cr.behaviors.Bullet,
-			8933503204581213
-		]
 		],
 		false,
 		false,
-		496555909103333,
+		5222300116453258,
 		[],
 		null
+		,[1]
 	]
 ,	[
 		"t4",
-		cr.plugins_.Sprite,
-		false,
-		[5312790822993472],
-		1,
-		0,
-		null,
-		[
-			[
-			"Default",
-			5,
-			false,
-			1,
-			0,
-			false,
-			4216575573706771,
-			[
-				["img/monster-sheet0.png", 17104, 0, 0, 142, 102, 1, 0.5, 0.5,[],[-0.110915,-0.181373,0.480634,-0.397059,0.239437,0,0.463028,0.372549,-0.079225,0.254902,-0.478873,0],0]
-			]
-			]
-		],
-		[
-		[
-			"Movement",
-			cr.behaviors.Bullet,
-			2753929701573553
-		]
-		],
-		false,
-		false,
-		6771110624267084,
-		[],
-		null
-	]
-,	[
-		"t5",
-		cr.plugins_.Sprite,
-		false,
-		[],
-		1,
-		0,
-		null,
-		[
-			[
-			"Default",
-			5,
-			false,
-			1,
-			0,
-			false,
-			3750911327498975,
-			[
-				["img/explosion-sheet0.png", 8641, 0, 0, 118, 101, 1, 0.5, 0.504951,[],[],0]
-			]
-			]
-		],
-		[
-		[
-			"Fade",
-			cr.behaviors.Fade,
-			9635398853094663
-		]
-		],
-		false,
-		false,
-		8150239424827487,
-		[],
-		null
-	]
-,	[
-		"t6",
-		cr.plugins_.Text,
-		false,
-		[],
-		0,
-		0,
-		null,
-		null,
-		[
-		],
-		false,
-		false,
-		4014746925385268,
-		[],
-		null
-	]
-,	[
-		"t7",
-		cr.plugins_.Text,
-		false,
-		[],
-		0,
-		0,
-		null,
-		null,
-		[
-		],
-		false,
-		false,
-		7396309970878321,
-		[],
-		null
-	]
-,	[
-		"t8",
 		cr.plugins_.Keyboard,
 		false,
 		[],
@@ -15984,10 +16757,27 @@ cr.getProjectModel = function() { return [
 		],
 		false,
 		false,
-		7735151511678335,
+		9243175574218231,
 		[],
 		null
 		,[]
+	]
+,	[
+		"t5",
+		cr.plugins_.Text,
+		false,
+		[],
+		0,
+		0,
+		null,
+		null,
+		[
+		],
+		false,
+		false,
+		1327088971305831,
+		[],
+		null
 	]
 	],
 	[
@@ -15995,16 +16785,16 @@ cr.getProjectModel = function() { return [
 	[
 	[
 		"Layout 1",
-		1280,
-		1024,
+		630,
+		360,
 		false,
 		"Event sheet 1",
-		2297185363898026,
+		4611484426916655,
 		[
 		[
 			"Background",
 			0,
-			2594665654807576,
+			8305463442078281,
 			true,
 			[255, 255, 255],
 			false,
@@ -16017,12 +16807,20 @@ cr.getProjectModel = function() { return [
 			0,
 			[
 			[
-				[0, 0, 0, 1280, 1024, 0, 0, 1, 0, 0, 0, 0, []],
+				[0, 0, 0, 1260, 360, 0, 0, 1, 0, 0, 0, 0, []],
 				0,
 				0,
 				[
 				],
 				[
+				[
+					40,
+					0,
+					0,
+					0,
+					0,
+					1
+				]
 				],
 				[
 					0,
@@ -16033,9 +16831,9 @@ cr.getProjectModel = function() { return [
 			[			]
 		]
 ,		[
-			"Main",
+			"Game",
 			1,
-			8819500357935586,
+			913138222907341,
 			true,
 			[255, 255, 255],
 			true,
@@ -16048,25 +16846,20 @@ cr.getProjectModel = function() { return [
 			0,
 			[
 			[
-				[286, 214, 0, 101, 101, 0, 0, 1, 0.504951, 0.504951, 0, 0, []],
+				[105, 183, 0, 35, 39, 0, 0, 1, 0.514286, 0.512821, 0, 0, []],
+				2,
 				1,
-				1,
 				[
 				],
 				[
 				[
-					200,
-					600,
-					500,
-					3,
-					3,
-					1,
-					1
-				],
-				[
-					1
-				],
-				[
+					300,
+					10000,
+					10000,
+					650,
+					1300,
+					1000,
+					0,
 					1
 				]
 				],
@@ -16078,290 +16871,27 @@ cr.getProjectModel = function() { return [
 				]
 			]
 ,			[
-				[131, -36, 0, 25, 12, 0, 0, 1, 0.52, 0.5, 0, 0, []],
-				3,
+				[30, 243, 0, 993, 117, 0, 0, 1, 0, 0, 0, 0, []],
+				1,
 				2,
 				[
 				],
 				[
 				[
+					1
 				],
 				[
-					600,
+					300,
 					0,
 					0,
 					0,
-					1,
+					0,
 					1
 				]
 				],
 				[
 					0,
-					"Default",
-					0,
-					1
-				]
-			]
-,			[
-				[722, 672, 0, 142, 102, 0, 0, 1, 0.5, 0.5, 0, 0, []],
-				4,
-				3,
-				[
-					[5]
-				],
-				[
-				[
-					80,
-					0,
-					0,
-					0,
-					1,
-					1
-				]
-				],
-				[
-					0,
-					"Default",
-					0,
-					1
-				]
-			]
-,			[
-				[603, 787, 0, 142, 102, 0, 0, 1, 0.5, 0.5, 0, 0, []],
-				4,
-				4,
-				[
-					[5]
-				],
-				[
-				[
-					80,
-					0,
-					0,
-					0,
-					1,
-					1
-				]
-				],
-				[
-					0,
-					"Default",
-					0,
-					1
-				]
-			]
-,			[
-				[918, 538, 0, 142, 102, 0, 0, 1, 0.5, 0.5, 0, 0, []],
-				4,
-				5,
-				[
-					[5]
-				],
-				[
-				[
-					80,
-					0,
-					0,
-					0,
-					1,
-					1
-				]
-				],
-				[
-					0,
-					"Default",
-					0,
-					1
-				]
-			]
-,			[
-				[1050, 250, 0, 142, 102, 0, 0, 1, 0.5, 0.5, 0, 0, []],
-				4,
-				6,
-				[
-					[5]
-				],
-				[
-				[
-					80,
-					0,
-					0,
-					0,
-					1,
-					1
-				]
-				],
-				[
-					0,
-					"Default",
-					0,
-					1
-				]
-			]
-,			[
-				[1137, 572, 0, 142, 102, 0, 0, 1, 0.5, 0.5, 0, 0, []],
-				4,
-				7,
-				[
-					[5]
-				],
-				[
-				[
-					80,
-					0,
-					0,
-					0,
-					1,
-					1
-				]
-				],
-				[
-					0,
-					"Default",
-					0,
-					1
-				]
-			]
-,			[
-				[1105, 836, 0, 142, 102, 0, 0, 1, 0.5, 0.5, 0, 0, []],
-				4,
-				8,
-				[
-					[5]
-				],
-				[
-				[
-					80,
-					0,
-					0,
-					0,
-					1,
-					1
-				]
-				],
-				[
-					0,
-					"Default",
-					0,
-					1
-				]
-			]
-,			[
-				[854, 872, 0, 142, 102, 0, 0, 1, 0.5, 0.5, 0, 0, []],
-				4,
-				9,
-				[
-					[5]
-				],
-				[
-				[
-					80,
-					0,
-					0,
-					0,
-					1,
-					1
-				]
-				],
-				[
-					0,
-					"Default",
-					0,
-					1
-				]
-			]
-,			[
-				[961, 748, 0, 142, 102, 0, 0, 1, 0.5, 0.5, 0, 0, []],
-				4,
-				10,
-				[
-					[5]
-				],
-				[
-				[
-					80,
-					0,
-					0,
-					0,
-					1,
-					1
-				]
-				],
-				[
-					0,
-					"Default",
-					0,
-					1
-				]
-			]
-,			[
-				[467, 921, 0, 142, 102, 0, 0, 1, 0.5, 0.5, 0, 0, []],
-				4,
-				11,
-				[
-					[5]
-				],
-				[
-				[
-					80,
-					0,
-					0,
-					0,
-					1,
-					1
-				]
-				],
-				[
-					0,
-					"Default",
-					0,
-					1
-				]
-			]
-,			[
-				[162, 906, 0, 142, 102, 0, 0, 1, 0.5, 0.5, 0, 0, []],
-				4,
-				12,
-				[
-					[5]
-				],
-				[
-				[
-					80,
-					0,
-					0,
-					0,
-					1,
-					1
-				]
-				],
-				[
-					0,
-					"Default",
-					0,
-					1
-				]
-			]
-,			[
-				[248, -81, 0, 118, 101, 0, 0, 1, 0.5, 0.504951, 1, 0, []],
-				5,
-				13,
-				[
-				],
-				[
-				[
-					1,
-					0,
-					0,
-					0.5,
-					1
-				]
-				],
-				[
-					0,
-					"Default",
-					0,
-					1
+					0
 				]
 			]
 			],
@@ -16370,7 +16900,7 @@ cr.getProjectModel = function() { return [
 ,		[
 			"UI",
 			2,
-			8964800800047337,
+			7262119066899853,
 			true,
 			[255, 255, 255],
 			true,
@@ -16383,9 +16913,9 @@ cr.getProjectModel = function() { return [
 			0,
 			[
 			[
-				[2, 2, 0, 636, 30, 0, 0, 1, 0, 0, 0, 0, []],
-				6,
-				14,
+				[4, 2, 0, 200, 30, 0, 0, 1, 0, 0, 0, 0, []],
+				5,
+				3,
 				[
 				],
 				[
@@ -16393,29 +16923,9 @@ cr.getProjectModel = function() { return [
 				[
 					"Text",
 					0,
-					"bold italic 14pt Arial",
-					"rgb(255,255,255)",
+					"12pt Arial",
+					"rgb(0,0,0)",
 					0,
-					0,
-					0,
-					0,
-					0
-				]
-			]
-,			[
-				[183, 165, 0, 268, 147, 0, 0, 1, 0, 0, 0, 0, []],
-				7,
-				15,
-				[
-				],
-				[
-				],
-				[
-					"Game Over!  Press space to restart",
-					0,
-					"bold italic 24pt Arial",
-					"rgb(255,204,153)",
-					1,
 					0,
 					0,
 					0,
@@ -16437,24 +16947,31 @@ cr.getProjectModel = function() { return [
 		[
 		[
 			1,
-			"MonsterSpeed",
+			"TotalDistance",
 			0,
-			80,
-false,false,3193421266285268,false
+			0,
+false,false,9132701201930161,false
 		]
 ,		[
 			1,
-			"Score",
+			"CurrentDistance",
 			0,
 			0,
-false,false,1157536589526878,false
+false,false,1000389972035034,false
+		]
+,		[
+			1,
+			"NextBlock",
+			0,
+			600,
+false,false,297493350041245,false
 		]
 ,		[
 			0,
 			null,
 			false,
 			null,
-			4091560002905547,
+			7829019821810309,
 			[
 			[
 				-1,
@@ -16464,43 +16981,40 @@ false,false,1157536589526878,false
 				false,
 				false,
 				false,
-				7390420738352789,
+				7890540936178336,
 				false
 			]
 			],
 			[
 			[
-				4,
-				cr.plugins_.Sprite.prototype.acts.SetAngle,
-				null,
-				3528020149132287,
+				0,
+				cr.behaviors.Bullet.prototype.acts.SetAngleOfMotion,
+				"Bullet",
+				5720921290184081,
 				false
 				,[
 				[
 					0,
 					[
-						19,
-						cr.system_object.prototype.exps.random
-						,[
-[
-							0,
-							360
-						]
-						]
+						0,
+						180
 					]
 				]
 				]
 			]
 ,			[
-				7,
-				cr.plugins_.Text.prototype.acts.SetVisible,
-				null,
-				749446736107776,
+				1,
+				cr.behaviors.Bullet.prototype.acts.SetAngleOfMotion,
+				"Bullet",
+				1133399349934745,
 				false
 				,[
 				[
-					3,
-					0
+					0,
+					[
+						0,
+						180
+					]
 				]
 				]
 			]
@@ -16511,7 +17025,172 @@ false,false,1157536589526878,false
 			null,
 			false,
 			null,
-			7951091301281615,
+			630788660774137,
+			[
+			[
+				0,
+				cr.plugins_.TiledBg.prototype.cnds.CompareX,
+				null,
+				0,
+				false,
+				false,
+				false,
+				5102646994259071,
+				false
+				,[
+				[
+					8,
+					3
+				]
+,				[
+					0,
+					[
+						7,
+						[
+							3,
+							[
+								20,
+								0,
+								cr.plugins_.TiledBg.prototype.exps.Width,
+								false,
+								null
+							]
+						]
+						,[
+							0,
+							2
+						]
+					]
+				]
+				]
+			]
+			],
+			[
+			[
+				0,
+				cr.plugins_.TiledBg.prototype.acts.SetX,
+				null,
+				8035005948578903,
+				false
+				,[
+				[
+					0,
+					[
+						4,
+						[
+							20,
+							0,
+							cr.plugins_.TiledBg.prototype.exps.X,
+							false,
+							null
+						]
+						,[
+							7,
+							[
+								20,
+								0,
+								cr.plugins_.TiledBg.prototype.exps.Width,
+								false,
+								null
+							]
+							,[
+								0,
+								2
+							]
+						]
+					]
+				]
+				]
+			]
+			]
+		]
+,		[
+			0,
+			null,
+			false,
+			null,
+			5105610910028447,
+			[
+			[
+				2,
+				cr.behaviors.Platform.prototype.cnds.IsOnFloor,
+				"Platform",
+				0,
+				false,
+				false,
+				false,
+				1417203656564873,
+				false
+			]
+			],
+			[
+			[
+				2,
+				cr.behaviors.Platform.prototype.acts.SimulateControl,
+				"Platform",
+				9463257784113064,
+				false
+				,[
+				[
+					3,
+					1
+				]
+				]
+			]
+			]
+		]
+,		[
+			0,
+			null,
+			true,
+			null,
+			3082506064314952,
+			[
+			[
+				3,
+				cr.plugins_.Touch.prototype.cnds.OnTouchStart,
+				null,
+				1,
+				false,
+				false,
+				false,
+				9143205461789399,
+				false
+			]
+,			[
+				4,
+				cr.plugins_.Keyboard.prototype.cnds.OnAnyKey,
+				null,
+				1,
+				false,
+				false,
+				false,
+				337099522782833,
+				false
+			]
+			],
+			[
+			[
+				2,
+				cr.behaviors.Platform.prototype.acts.SimulateControl,
+				"Platform",
+				2368368818135383,
+				false
+				,[
+				[
+					3,
+					2
+				]
+				]
+			]
+			]
+		]
+,		[
+			0,
+			null,
+			false,
+			null,
+			7986333618243409,
 			[
 			[
 				-1,
@@ -16521,270 +17200,91 @@ false,false,1157536589526878,false
 				false,
 				false,
 				false,
-				273330811362693,
+				3934767145586213,
 				false
 			]
 			],
 			[
 			[
-				1,
-				cr.plugins_.Sprite.prototype.acts.SetTowardPosition,
+				-1,
+				cr.system_object.prototype.acts.AddVar,
 				null,
-				4642746177298622,
+				8528278530503661,
 				false
 				,[
 				[
-					0,
-					[
-						20,
-						2,
-						cr.plugins_.Mouse.prototype.exps.X,
-						false,
-						null
-					]
+					11,
+					"CurrentDistance"
 				]
 ,				[
-					0,
+					7,
 					[
-						20,
-						2,
-						cr.plugins_.Mouse.prototype.exps.Y,
-						false,
-						null
+						6,
+						[
+							22,
+							1,
+							"Bullet",
+							cr.behaviors.Bullet.prototype.exps.Speed,
+							false,
+							null
+						]
+						,[
+							19,
+							cr.system_object.prototype.exps.dt
+						]
 					]
 				]
 				]
 			]
 ,			[
-				6,
-				cr.plugins_.Text.prototype.acts.SetText,
+				-1,
+				cr.system_object.prototype.acts.AddVar,
 				null,
-				2915093828302491,
+				5744465266364386,
 				false
 				,[
 				[
+					11,
+					"TotalDistance"
+				]
+,				[
 					7,
 					[
-						10,
+						6,
 						[
-							10,
-							[
-								10,
-								[
-									10,
-									[
-										10,
-										[
-											2,
-											"Score: "
-										]
-										,[
-											23,
-											"Score"
-										]
-									]
-									,[
-										2,
-										" - FPS: "
-									]
-								]
-								,[
-									19,
-									cr.system_object.prototype.exps.fps
-								]
-							]
-							,[
-								19,
-								cr.system_object.prototype.exps.newline
-							]
+							22,
+							1,
+							"Bullet",
+							cr.behaviors.Bullet.prototype.exps.Speed,
+							false,
+							null
 						]
 						,[
-							2,
-							"Use arrow keys to move and click to shoot!"
+							19,
+							cr.system_object.prototype.exps.dt
 						]
-					]
-				]
-				]
-			]
-			]
-		]
-,		[
-			0,
-			null,
-			false,
-			null,
-			1700083524139586,
-			[
-			[
-				2,
-				cr.plugins_.Mouse.prototype.cnds.OnClick,
-				null,
-				1,
-				false,
-				false,
-				false,
-				241855041168792,
-				false
-				,[
-				[
-					3,
-					0
-				]
-,				[
-					3,
-					0
-				]
-				]
-			]
-			],
-			[
-			[
-				1,
-				cr.plugins_.Sprite.prototype.acts.Spawn,
-				null,
-				7549038046861048,
-				false
-				,[
-				[
-					4,
-					3
-				]
-,				[
-					5,
-					[
-						0,
-						1
-					]
-				]
-,				[
-					7,
-					[
-						0,
-						1
-					]
-				]
-				]
-			]
-			]
-		]
-,		[
-			0,
-			null,
-			false,
-			null,
-			6159764071987359,
-			[
-			[
-				3,
-				cr.plugins_.Sprite.prototype.cnds.OnCollision,
-				null,
-				0,
-				false,
-				false,
-				true,
-				6643521680814538,
-				false
-				,[
-				[
-					4,
-					4
-				]
-				]
-			]
-			],
-			[
-			[
-				3,
-				cr.plugins_.Sprite.prototype.acts.Spawn,
-				null,
-				2885880469635296,
-				false
-				,[
-				[
-					4,
-					5
-				]
-,				[
-					5,
-					[
-						2,
-						"Main"
-					]
-				]
-,				[
-					7,
-					[
-						0,
-						0
 					]
 				]
 				]
 			]
 ,			[
 				5,
-				cr.plugins_.Sprite.prototype.acts.SetAngle,
+				cr.plugins_.Text.prototype.acts.SetText,
 				null,
-				2055515632348941,
+				5939942526336563,
 				false
 				,[
 				[
-					0,
+					7,
 					[
 						19,
-						cr.system_object.prototype.exps.random
+						cr.system_object.prototype.exps.round
 						,[
 [
-							0,
-							360
+							23,
+							"TotalDistance"
 						]
 						]
-					]
-				]
-				]
-			]
-,			[
-				4,
-				cr.plugins_.Sprite.prototype.acts.SubInstanceVar,
-				null,
-				1759092200380625,
-				false
-				,[
-				[
-					10,
-					0
-				]
-,				[
-					7,
-					[
-						0,
-						1
-					]
-				]
-				]
-			]
-,			[
-				3,
-				cr.plugins_.Sprite.prototype.acts.Destroy,
-				null,
-				4376000561318451,
-				false
-			]
-,			[
-				-1,
-				cr.system_object.prototype.acts.AddVar,
-				null,
-				5112083197236284,
-				false
-				,[
-				[
-					11,
-					"MonsterSpeed"
-				]
-,				[
-					7,
-					[
-						0,
-						1
 					]
 				]
 				]
@@ -16796,32 +17296,32 @@ false,false,1157536589526878,false
 			null,
 			false,
 			null,
-			6857284712557188,
+			8172846283262248,
 			[
 			[
-				4,
-				cr.plugins_.Sprite.prototype.cnds.CompareInstanceVar,
+				-1,
+				cr.system_object.prototype.cnds.CompareVar,
 				null,
 				0,
 				false,
 				false,
 				false,
-				7298596010883224,
+				5855485343022298,
 				false
 				,[
 				[
-					10,
-					0
+					11,
+					"CurrentDistance"
 				]
 ,				[
 					8,
-					3
+					5
 				]
 ,				[
 					7,
 					[
-						0,
-						0
+						23,
+						"NextBlock"
 					]
 				]
 				]
@@ -16829,32 +17329,52 @@ false,false,1157536589526878,false
 			],
 			[
 			[
-				4,
-				cr.plugins_.Sprite.prototype.acts.Destroy,
+				-1,
+				cr.system_object.prototype.acts.SubVar,
 				null,
-				5714544631336995,
+				8532285445236703,
 				false
+				,[
+				[
+					11,
+					"CurrentDistance"
+				]
+,				[
+					7,
+					[
+						23,
+						"NextBlock"
+					]
+				]
+				]
 			]
 ,			[
-				4,
-				cr.plugins_.Sprite.prototype.acts.Spawn,
+				-1,
+				cr.system_object.prototype.acts.CreateObject,
 				null,
-				8302951363053864,
+				4144068709750778,
 				false
 				,[
 				[
 					4,
-					5
+					1
 				]
 ,				[
 					5,
 					[
 						2,
-						"Main"
+						"Game"
 					]
 				]
 ,				[
-					7,
+					0,
+					[
+						0,
+						0
+					]
+				]
+,				[
+					0,
 					[
 						0,
 						0
@@ -16863,185 +17383,181 @@ false,false,1157536589526878,false
 				]
 			]
 ,			[
-				5,
-				cr.plugins_.Sprite.prototype.acts.SetAngle,
+				1,
+				cr.plugins_.TiledBg.prototype.acts.SetSize,
 				null,
-				9331961074442636,
+				7189132785670524,
 				false
 				,[
 				[
 					0,
 					[
-						19,
-						cr.system_object.prototype.exps.random
-						,[
-[
+						4,
+						[
 							0,
-							360
+							100
 						]
+						,[
+							19,
+							cr.system_object.prototype.exps.random
+							,[
+[
+								0,
+								400
+							]
+							]
+						]
+					]
+				]
+,				[
+					0,
+					[
+						4,
+						[
+							0,
+							60
+						]
+						,[
+							19,
+							cr.system_object.prototype.exps.random
+							,[
+[
+								0,
+								180
+							]
+							]
 						]
 					]
 				]
 				]
 			]
 ,			[
-				-1,
-				cr.system_object.prototype.acts.AddVar,
+				1,
+				cr.plugins_.TiledBg.prototype.acts.SetPos,
 				null,
-				2576289399828636,
+				8580186129667869,
+				false
+				,[
+				[
+					0,
+					[
+						19,
+						cr.system_object.prototype.exps.layoutwidth
+					]
+				]
+,				[
+					0,
+					[
+						5,
+						[
+							19,
+							cr.system_object.prototype.exps.layoutheight
+						]
+						,[
+							20,
+							1,
+							cr.plugins_.TiledBg.prototype.exps.Height,
+							false,
+							null
+						]
+					]
+				]
+				]
+			]
+,			[
+				1,
+				cr.behaviors.Bullet.prototype.acts.SetAngleOfMotion,
+				"Bullet",
+				7409811959875407,
+				false
+				,[
+				[
+					0,
+					[
+						0,
+						180
+					]
+				]
+				]
+			]
+,			[
+				-1,
+				cr.system_object.prototype.acts.SetVar,
+				null,
+				2632523933033904,
 				false
 				,[
 				[
 					11,
-					"Score"
+					"NextBlock"
 				]
 ,				[
 					7,
 					[
-						22,
 						4,
-						"Movement",
-						cr.behaviors.Bullet.prototype.exps.Speed,
-						false,
-						null
-					]
-				]
-				]
-			]
-			]
-		]
-,		[
-			0,
-			null,
-			false,
-			null,
-			7638118267576825,
-			[
-			[
-				4,
-				cr.plugins_.Sprite.prototype.cnds.IsOutsideLayout,
-				null,
-				0,
-				false,
-				false,
-				false,
-				9807735157008026,
-				false
-			]
-			],
-			[
-			[
-				4,
-				cr.plugins_.Sprite.prototype.acts.SetTowardPosition,
-				null,
-				6278508985655325,
-				false
-				,[
-				[
-					0,
-					[
-						20,
-						1,
-						cr.plugins_.Sprite.prototype.exps.X,
-						false,
-						null
-					]
-				]
-,				[
-					0,
-					[
-						20,
-						1,
-						cr.plugins_.Sprite.prototype.exps.Y,
-						false,
-						null
-					]
-				]
-				]
-			]
-			]
-		]
-,		[
-			0,
-			null,
-			false,
-			null,
-			7552835711832795,
-			[
-			[
-				-1,
-				cr.system_object.prototype.cnds.ForEach,
-				null,
-				0,
-				true,
-				false,
-				false,
-				9194913181692807,
-				false
-				,[
-				[
-					4,
-					4
-				]
-				]
-			]
-,			[
-				-1,
-				cr.system_object.prototype.cnds.Compare,
-				null,
-				0,
-				false,
-				false,
-				false,
-				300913354360416,
-				false
-				,[
-				[
-					7,
-					[
-						19,
-						cr.system_object.prototype.exps.distance
+						[
+							4,
+							[
+								20,
+								1,
+								cr.plugins_.TiledBg.prototype.exps.Width,
+								false,
+								null
+							]
+							,[
+								0,
+								20
+							]
+						]
 						,[
+							19,
+							cr.system_object.prototype.exps.random
+							,[
 [
-							20,
-							1,
-							cr.plugins_.Sprite.prototype.exps.X,
-							false,
-							null
-						]
-,[
-							20,
-							1,
-							cr.plugins_.Sprite.prototype.exps.Y,
-							false,
-							null
-						]
-,[
-							20,
-							4,
-							cr.plugins_.Sprite.prototype.exps.X,
-							false,
-							null
-						]
-,[
-							20,
-							4,
-							cr.plugins_.Sprite.prototype.exps.Y,
-							false,
-							null
-						]
+								0,
+								200
+							]
+							]
 						]
 					]
 				]
-,				[
+				]
+			]
+			]
+		]
+,		[
+			0,
+			null,
+			false,
+			null,
+			7171105465112139,
+			[
+			[
+				1,
+				cr.plugins_.TiledBg.prototype.cnds.CompareX,
+				null,
+				0,
+				false,
+				false,
+				false,
+				4965591824284572,
+				false
+				,[
+				[
 					8,
 					2
 				]
 ,				[
-					7,
+					0,
 					[
-						0,
-						200
+						3,
+						[
+							20,
+							1,
+							cr.plugins_.TiledBg.prototype.exps.Width,
+							false,
+							null
+						]
 					]
 				]
 				]
@@ -17049,40 +17565,11 @@ false,false,1157536589526878,false
 			],
 			[
 			[
-				4,
-				cr.plugins_.Sprite.prototype.acts.RotateTowardPosition,
+				1,
+				cr.plugins_.TiledBg.prototype.acts.Destroy,
 				null,
-				4435476699958902,
+				4599232571147055,
 				false
-				,[
-				[
-					0,
-					[
-						0,
-						1
-					]
-				]
-,				[
-					0,
-					[
-						20,
-						1,
-						cr.plugins_.Sprite.prototype.exps.X,
-						false,
-						null
-					]
-				]
-,				[
-					0,
-					[
-						20,
-						1,
-						cr.plugins_.Sprite.prototype.exps.Y,
-						false,
-						null
-					]
-				]
-				]
 			]
 			]
 		]
@@ -17091,82 +17578,123 @@ false,false,1157536589526878,false
 			null,
 			false,
 			null,
-			3508122276828247,
+			326384933878902,
 			[
 			[
-				-1,
-				cr.system_object.prototype.cnds.Every,
+				2,
+				cr.plugins_.Sprite.prototype.cnds.CompareY,
 				null,
 				0,
 				false,
 				false,
 				false,
-				8253680937808339,
+				5749190014184849,
 				false
 				,[
 				[
-					0,
-					[
-						0,
-						3
-					]
-				]
-				]
-			]
-			],
-			[
-			[
-				-1,
-				cr.system_object.prototype.acts.CreateObject,
-				null,
-				8652626906528748,
-				false
-				,[
-				[
-					4,
+					8,
 					4
-				]
-,				[
-					5,
-					[
-						2,
-						"Main"
-					]
-				]
-,				[
-					0,
-					[
-						0,
-						1500
-					]
 				]
 ,				[
 					0,
 					[
 						19,
-						cr.system_object.prototype.exps.random
-						,[
-[
-							0,
-							1024
-						]
-						]
+						cr.system_object.prototype.exps.layoutheight
+					]
+				]
+				]
+			]
+			],
+			[
+			[
+				-1,
+				cr.system_object.prototype.acts.ResetGlobals,
+				null,
+				2372570533224899,
+				false
+			]
+,			[
+				-1,
+				cr.system_object.prototype.acts.RestartLayout,
+				null,
+				9551640850233452,
+				false
+			]
+			]
+		]
+,		[
+			0,
+			null,
+			false,
+			null,
+			673623995975514,
+			[
+			[
+				2,
+				cr.plugins_.Sprite.prototype.cnds.CompareX,
+				null,
+				0,
+				false,
+				false,
+				false,
+				8554833393645821,
+				false
+				,[
+				[
+					8,
+					2
+				]
+,				[
+					0,
+					[
+						0,
+						105
 					]
 				]
 				]
 			]
 ,			[
-				4,
-				cr.behaviors.Bullet.prototype.acts.SetSpeed,
-				"Movement",
-				1041745260341321,
+				2,
+				cr.behaviors.Platform.prototype.cnds.IsOnFloor,
+				"Platform",
+				0,
+				false,
+				true,
+				false,
+				380368218541256,
+				false
+			]
+			],
+			[
+			[
+				2,
+				cr.plugins_.Sprite.prototype.acts.SetX,
+				null,
+				3046737871447334,
 				false
 				,[
 				[
 					0,
 					[
-						23,
-						"MonsterSpeed"
+						4,
+						[
+							20,
+							2,
+							cr.plugins_.Sprite.prototype.exps.X,
+							false,
+							null
+						]
+						,[
+							6,
+							[
+								0,
+								5
+							]
+							,[
+								19,
+								cr.system_object.prototype.exps.dt
+							]
+						]
 					]
 				]
 				]
@@ -17178,159 +17706,44 @@ false,false,1157536589526878,false
 			null,
 			false,
 			null,
-			8656840724724861,
+			9701211456827839,
 			[
 			[
-				4,
-				cr.plugins_.Sprite.prototype.cnds.OnCollision,
-				null,
-				0,
-				false,
-				false,
-				true,
-				3028153215224862,
-				false
-				,[
-				[
-					4,
-					1
-				]
-				]
-			]
-			],
-			[
-			[
-				1,
-				cr.plugins_.Sprite.prototype.acts.Destroy,
-				null,
-				5882667517183005,
-				false
-			]
-,			[
-				7,
-				cr.plugins_.Text.prototype.acts.SetVisible,
-				null,
-				3615858564985841,
-				false
-				,[
-				[
-					3,
-					1
-				]
-				]
-			]
-			]
-		]
-,		[
-			0,
-			null,
-			false,
-			null,
-			2926759946970381,
-			[
-			[
-				8,
-				cr.plugins_.Keyboard.prototype.cnds.OnKey,
-				null,
+				2,
+				cr.behaviors.Platform.prototype.cnds.OnLand,
+				"Platform",
 				1,
 				false,
 				false,
 				false,
-				1680994907390394,
+				6411730320424848,
 				false
-				,[
-				[
-					9,
-					32
-				]
-				]
-			]
-,			[
-				-1,
-				cr.system_object.prototype.cnds.Compare,
-				null,
-				0,
-				false,
-				false,
-				false,
-				598117263128187,
-				false
-				,[
-				[
-					7,
-					[
-						20,
-						1,
-						cr.plugins_.Sprite.prototype.exps.Count,
-						false,
-						null
-					]
-				]
-,				[
-					8,
-					0
-				]
-,				[
-					7,
-					[
-						0,
-						0
-					]
-				]
-				]
 			]
 			],
 			[
 			[
-				-1,
-				cr.system_object.prototype.acts.SetVar,
+				2,
+				cr.plugins_.Sprite.prototype.acts.SetX,
 				null,
-				8662963501035321,
+				5865794934634096,
 				false
 				,[
 				[
-					11,
-					"MonsterSpeed"
-				]
-,				[
-					7,
+					0,
 					[
-						0,
-						80
+						4,
+						[
+							20,
+							2,
+							cr.plugins_.Sprite.prototype.exps.X,
+							false,
+							null
+						]
+						,[
+							0,
+							1
+						]
 					]
-				]
-				]
-			]
-,			[
-				-1,
-				cr.system_object.prototype.acts.SetVar,
-				null,
-				4763446161805695,
-				false
-				,[
-				[
-					11,
-					"Score"
-				]
-,				[
-					7,
-					[
-						0,
-						0
-					]
-				]
-				]
-			]
-,			[
-				-1,
-				cr.system_object.prototype.acts.GoToLayout,
-				null,
-				9813506755590209,
-				false
-				,[
-				[
-					6,
-					"Layout 1"
 				]
 				]
 			]
@@ -17341,18 +17754,18 @@ false,false,1157536589526878,false
 	],
 	"file/",
 	false,
-	640,
-	480,
-	0,
+	630,
+	360,
+	4,
 	true,
 	true,
 	true,
-	"1",
+	"1.0",
 	true,
 	false,
 	0,
 	0,
-	18,
+	6,
 	false,
 	true,
 	[
